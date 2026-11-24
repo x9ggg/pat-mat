@@ -25,6 +25,8 @@ patmat: herdr 上 coding agent 之间的信使
   patmat spawn <kind> [--short 短名] [--name N] [--cwd 目录] [--role 文本] [-- CLI 参数...]
                                           在旁边的 pane 启动另一家 CLI 作为子 agent
   patmat dismiss <名字> [--force]         关闭自己启动的子 agent
+  patmat install                          装进本机每家已适配的 CLI（Claude Code、Codex、Grok），可重复执行
+  patmat pointer                          打印名片指针，供手动加进其他 CLI 的全局指令文件
   patmat doctor                           检查本机安装是否完整
 
 <对象> 是花名册里的名字或 pane id（如 db、w3:p1），也接受 名字@pane。
@@ -431,6 +433,128 @@ cmd_dismiss() {
   printf '已关闭子 agent %s（pane %s）。\n' "$1" "$pane"
 }
 
+# 已适配的 CLI，每行：命令|herdr 集成 id|全局 skill 目录|全局指令文件
+known_clis() {
+  printf '%s\n' \
+    "claude|claude|$HOME/.claude/skills|$HOME/.claude/CLAUDE.md" \
+    "codex|codex|$HOME/.agents/skills|$HOME/.codex/AGENTS.md" \
+    "grok|grok|$HOME/.grok/skills|$HOME/.grok/AGENTS.md"
+}
+
+# 名片指针：写进各 CLI 全局指令文件的那一节。
+pointer_text() {
+  cat <<'EOF'
+## pat&mat
+
+在 herdr 里工作时（环境变量 HERDR_ENV=1），接到任务先运行 `patmat card --short "<两到六个字的短名，让用户一眼认出这个会话>" --role "<你负责什么>" --doing "<正在做什么>"` 挂出名片，换任务时更新 --doing。要与其他 agent 协作，或收到以 [pat&mat 开头的消息时，使用 pat-mat skill；没有该 skill 时运行 `patmat help`。
+EOF
+}
+
+# 本脚本的真实路径（穿过软链）。
+script_path() {
+  local src=$0 dir
+  while [ -L "$src" ]; do
+    dir=$(cd "$(dirname "$src")" && pwd -P)
+    src=$(readlink "$src")
+    case "$src" in /*) ;; *) src=$dir/$src ;; esac
+  done
+  printf '%s/%s' "$(cd "$(dirname "$src")" && pwd -P)" "$(basename "$src")"
+}
+
+# ensure_link <指向> <链接路径>：已正确就跳过；路径被别的东西占着就不动它。
+ensure_link() {
+  local target=$1 path=$2 cur
+  if [ -L "$path" ]; then
+    cur=$(readlink "$path")
+    if [ "$cur" = "$target" ]; then
+      printf '  已就绪  %s\n' "$path"
+    else
+      printf '  跳过    %s 已指向 %s，未改动\n' "$path" "$cur"
+    fi
+  elif [ -e "$path" ]; then
+    printf '  跳过    %s 已存在且不是软链，未改动\n' "$path"
+  else
+    mkdir -p "$(dirname "$path")"
+    ln -s "$target" "$path"
+    printf '  已链接  %s -> %s\n' "$path" "$target"
+  fi
+}
+
+cmd_install() {
+  command -v herdr >/dev/null 2>&1 || die "找不到 herdr，请先安装：https://herdr.dev"
+  command -v jq >/dev/null 2>&1 || die "找不到 jq，请先安装（brew install jq）"
+  local self root
+  self=$(script_path)
+  root=$(dirname "$(dirname "$self")")
+  [ -f "$root/SKILL.md" ] || die "在 $root 下找不到 SKILL.md，请从完整的 pat-mat 仓库里运行。"
+
+  printf 'patmat 命令：\n'
+  ensure_link "$self" "$HOME/.local/bin/patmat"
+  case ":$PATH:" in
+    *":$HOME/.local/bin:"*) ;;
+    *) printf '  注意    ~/.local/bin 不在 PATH 上，请把它加进你的 shell 配置\n' ;;
+  esac
+
+  local status bin id skills file line found=0
+  status=$(herdr integration status 2>/dev/null || true)
+  while IFS='|' read -r bin id skills file; do
+    command -v "$bin" >/dev/null 2>&1 || continue
+    found=1
+    printf '%s：\n' "$bin"
+    ensure_link "$root" "$skills/pat-mat"
+    if [ -f "$file" ] && grep -q 'patmat card' "$file"; then
+      printf '  已就绪  %s 里有名片指针\n' "$file"
+    else
+      mkdir -p "$(dirname "$file")"
+      {
+        if [ -s "$file" ]; then printf '\n'; fi
+        pointer_text
+      } >>"$file"
+      printf '  已写入  名片指针 -> %s\n' "$file"
+    fi
+    line=$(printf '%s\n' "$status" | grep "^$id[ :(]" | head -1 || true)
+    case "$line" in
+      *": current"*) printf '  已就绪  herdr 集成 %s\n' "$id" ;;
+      *)
+        if herdr integration install "$id" </dev/null >/dev/null 2>&1; then
+          printf '  已安装  herdr 集成 %s\n' "$id"
+        else
+          printf '  未完成  herdr 集成 %s，请手动运行 herdr integration install %s\n' "$id" "$id"
+        fi
+        ;;
+    esac
+  done <<EOF
+$(known_clis)
+EOF
+  [ "$found" = 1 ] || printf '没有发现已适配的 CLI（claude、codex、grok）。装好其中一家后重跑 patmat install。\n'
+
+  printf 'herdr 侧边栏：\n'
+  local cfg=${HERDR_CONFIG_PATH:-$HOME/.config/herdr/config.toml}
+  if [ -f "$cfg" ] && grep -q '\$short' "$cfg" && grep -q '\$role' "$cfg" && grep -q '\$doing' "$cfg"; then
+    printf '  已就绪  %s\n' "$cfg"
+  elif [ -f "$cfg" ] && grep -q '^\[ui\.sidebar\.agents\]' "$cfg"; then
+    printf '  未完成  %s 里已有自定义的 [ui.sidebar.agents]，请手动把 %s 加进 rows\n' "$cfg" "\$short、\$role、\$doing"
+  else
+    mkdir -p "$(dirname "$cfg")"
+    {
+      if [ -s "$cfg" ]; then printf '\n'; fi
+      cat <<'EOF'
+[ui.sidebar.agents]
+rows = [
+  ["state_icon", "machine", "workspace", "tab"],
+  ["$short", "agent", "$role"],
+  ["$doing"],
+]
+EOF
+    } >>"$cfg"
+    printf '  已写入  名片行 -> %s\n' "$cfg"
+    herdr server reload-config >/dev/null 2>&1 || printf '  注意    herdr 没在运行，侧边栏配置下次启动时生效\n'
+  fi
+
+  printf '\n装好了。在 herdr 里启动或重启 agent，它会自动挂出名片；随时可在 agent 里运行 patmat doctor 体检。\n'
+  printf 'Codex 若使用 workspace-write 沙箱，还需放行 herdr socket，见 %s/SETUP.md。\n' "$root"
+}
+
 cmd_doctor() {
   local bad=0
   ok() { printf '  ok  %s\n' "$*"; }
@@ -444,9 +568,9 @@ cmd_doctor() {
   if command -v jq >/dev/null 2>&1; then ok "jq"; else miss "jq 未安装"; fi
 
   local self onpath
-  self=$(cd "$(dirname "$0")" && pwd -P)/$(basename "$0")
+  self=$(script_path)
   onpath=$(command -v patmat 2>/dev/null || true)
-  if [ -n "$onpath" ]; then ok "patmat 在 PATH 上：$onpath"; else miss "patmat 不在 PATH 上：ln -sf \"$self\" ~/.local/bin/patmat"; fi
+  if [ -n "$onpath" ]; then ok "patmat 在 PATH 上：$onpath"; else miss "patmat 不在 PATH 上：运行 \"$self\" install"; fi
 
   if [ "${HERDR_ENV:-}" = 1 ]; then
     ok "运行在 herdr 内"
@@ -491,15 +615,15 @@ cmd_doctor() {
     done
   fi
 
-  # 每家 CLI：skill 可读 + 全局指令里有名片指针。格式 bin|skill 目录|指令文件
-  local row bin skills file
-  for row in "claude|$HOME/.claude/skills|$HOME/.claude/CLAUDE.md" "codex|$HOME/.agents/skills|$HOME/.codex/AGENTS.md" "grok|$HOME/.grok/skills|$HOME/.grok/AGENTS.md"; do
-    bin=${row%%|*} file=${row##*|} skills=${row#*|}
-    skills=${skills%|*}
+  # 每家已适配的 CLI：skill 可读，全局指令里有名片指针。
+  local bin id skills file
+  while IFS='|' read -r bin id skills file; do
     command -v "$bin" >/dev/null 2>&1 || continue
-    if [ -r "$skills/pat-mat/SKILL.md" ]; then ok "$bin 能读到 skill（$skills/pat-mat）"; else miss "$bin 读不到 skill：把本 skill 目录软链为 $skills/pat-mat"; fi
-    if [ -f "$file" ] && grep -q 'patmat card' "$file"; then ok "$bin 的全局指令里有名片指针（${file}）"; else miss "$bin 的全局指令缺名片指针：$file"; fi
-  done
+    if [ -r "$skills/pat-mat/SKILL.md" ]; then ok "$bin 能读到 skill（$skills/pat-mat）"; else miss "$bin 读不到 skill：运行 patmat install"; fi
+    if [ -f "$file" ] && grep -q 'patmat card' "$file"; then ok "$bin 的全局指令里有名片指针（${file}）"; else miss "$bin 的全局指令缺名片指针：运行 patmat install"; fi
+  done <<EOF
+$(known_clis)
+EOF
   for bin in kimi agy; do
     command -v "$bin" >/dev/null 2>&1 && note "${bin}：skill 目录和全局指令文件的位置请对照其文档，确认两处都已就位"
   done
@@ -523,6 +647,8 @@ main() {
     tell) cmd_tell "$@" ;;
     spawn) cmd_spawn "$@" ;;
     dismiss) cmd_dismiss "$@" ;;
+    install) cmd_install "$@" ;;
+    pointer) pointer_text ;;
     doctor) cmd_doctor "$@" ;;
     help | -h | --help) usage ;;
     *) die "不认识的子命令 ${cmd}。运行 patmat help 查看用法。" ;;

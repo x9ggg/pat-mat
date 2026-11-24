@@ -11,28 +11,21 @@ pat&mat 是一个 skill，让同一个 [herdr](https://github.com/herdrdev/herdr
 
 ## 安装
 
-前提：macOS，已安装 [herdr](https://github.com/herdrdev/herdr)、`jq` 和至少一家受支持的 coding agent CLI。
+前提：macOS，已安装 [herdr](https://github.com/herdrdev/herdr)、`jq`、`git` 和至少一家受支持的 coding agent CLI。
 
-1. 克隆仓库：
+```bash
+curl -fsSL https://raw.githubusercontent.com/x9ggg/pat-mat/main/install.sh | bash
+```
 
-   ```bash
-   git clone https://github.com/x9ggg/pat-mat ~/pat-mat
-   ```
+这一条命令把仓库克隆到 `~/pat-mat`，并为本机每家已适配的 CLI（Claude Code、Codex、Grok）完成设置：
 
-2. 按使用的 CLI，复制对应命令创建软链接；用多家就分别执行。目标路径已存在时，请先检查。
+- 把 `patmat` 命令链到 `~/.local/bin`。
+- 把 skill 链进各 CLI 的全局 skill 目录，在其全局指令文件末尾追加一节 pat&mat 指针，装上 herdr 集成。
+- 在 herdr 配置里加入显示名片的侧边栏行。
 
-   ```bash
-   # Claude Code
-   mkdir -p ~/.claude/skills && ln -sn ~/pat-mat ~/.claude/skills/pat-mat
-   # Codex
-   mkdir -p ~/.agents/skills && ln -sn ~/pat-mat ~/.agents/skills/pat-mat
-   # Grok
-   mkdir -p ~/.grok/skills && ln -sn ~/pat-mat ~/.grok/skills/pat-mat
-   ```
+命令可以重复执行，已有的文件和链接不会被覆盖；以后升级也是再跑一遍。
 
-3. 运行 `herdr` 进入 herdr，再在 pane 里启动你的 CLI（`claude`、`codex` 或 `grok`）。
-
-   然后对它说：**“帮我设置 pat&mat”**。它会按 [SETUP.md](SETUP.md) 检查并带你完成剩余设置；修改全局文件前会展示改动并征得你的同意。设置完成后，在每家 CLI 中新开会话，让新指令生效。
+装完后运行 `herdr`，在 pane 里启动（或重启）你的 CLI 即可。其余 CLI、自定义过的侧边栏、沙箱等特殊情况，对 agent 说 **“帮我设置 pat&mat”**，它会按 [SETUP.md](SETUP.md) 带你处理。
 
 ## 怎么用
 
