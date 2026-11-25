@@ -544,7 +544,7 @@ EOF
       cat <<'EOF'
 [ui.sidebar.agents]
 rows = [
-  ["state_icon", "$short", "workspace", "machine"],
+  ["state_icon", { token = "$short", bold = true }, { token = "workspace", bold = false }, "machine"],
   ["agent", "$role"],
   ["$doing"],
 ]
