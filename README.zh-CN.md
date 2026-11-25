@@ -23,7 +23,7 @@ skill 文档和 `patmat` 输出都是英文。agent 会用你的语言转述，�
    curl -fsSL https://raw.githubusercontent.com/x9ggg/pat-mat/main/install.sh | bash
    ```
 
-   安装器会克隆或更新 `~/pat-mat`，配置已安装的 Claude Code、Codex、Grok 和 herdr 侧边栏。重复运行可以更新。请留意输出中跳过的步骤和 PATH 提示。
+   安装器会克隆或更新 `~/pat-mat`，配置已安装的 Claude Code、Codex、Grok、Antigravity 和 herdr 侧边栏。重复运行可以更新。请留意输出中跳过的步骤和 PATH 提示。
 2. 运行 `herdr`，在 pane 里启动或重启 agent。它接到任务后会挂出名片。
 3. 如果安装有未完成的步骤，或你使用其他 CLI、自定义侧边栏或沙箱，对 agent 说 **“帮我设置 pat&mat”**，它可以按 [SETUP.md](SETUP.md) 帮你处理。
 
@@ -43,7 +43,7 @@ skill 文档和 `patmat` 输出都是英文。agent 会用你的语言转述，�
 
 ## 支持情况
 
-Claude Code、Codex、Grok 已在 macOS + herdr 0.9.5 上实测；Kimi、Antigravity 尚未实测。
+Claude Code、Codex、Grok、Antigravity 已在 macOS + herdr 0.9.5 上实测；Kimi 尚未实测。
 
 ## 许可证
 

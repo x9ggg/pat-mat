@@ -25,7 +25,7 @@ patmat: messenger between coding agents on herdr
   patmat spawn <kind> [--short SHORT] [--name N] [--cwd DIR] [--role TEXT] [-- CLI args...]
                                           start another CLI as a sub-agent in a pane next to you
   patmat dismiss <name> [--force]         close a sub-agent you started
-  patmat install                          install into every supported CLI on this machine (Claude Code, Codex, Grok); safe to rerun
+  patmat install                          install into every supported CLI on this machine (Claude Code, Codex, Grok, Antigravity); safe to rerun
   patmat pointer                          print the card pointer, for adding by hand to other CLIs' global instruction files
   patmat doctor                           check that the install on this machine is complete
 
@@ -51,6 +51,14 @@ herdr_call() {
   HERR_MSG=$(jq -r '.error.message // empty' "$errf" 2>/dev/null || true)
   [ -n "$HERR_MSG" ] || HERR_MSG=$(cat "$errf")
   rm -f "$errf"
+  # A sandbox blocking the socket makes every call fail; say so plainly so the agent reruns outside it.
+  # cmd_doctor sets PATMAT_SOFT_SOCKET=1 to report this as one checkup item instead.
+  case "$HERR_MSG" in
+    *"Operation not permitted"*)
+      [ "${PATMAT_SOFT_SOCKET:-0}" = 1 ] ||
+        die "cannot reach the herdr socket (Operation not permitted): this command is running inside a sandbox that blocks local sockets. Rerun the same patmat command outside the sandbox."
+      ;;
+  esac
   return 1
 }
 
@@ -440,7 +448,8 @@ known_clis() {
   printf '%s\n' \
     "claude|claude|$HOME/.claude/skills|$HOME/.claude/CLAUDE.md" \
     "codex|codex|$HOME/.agents/skills|$HOME/.codex/AGENTS.md" \
-    "grok|grok|$HOME/.grok/skills|$HOME/.grok/AGENTS.md"
+    "grok|grok|$HOME/.grok/skills|$HOME/.grok/AGENTS.md" \
+    "agy|antigravity-cli|$HOME/.agents/skills|$HOME/.gemini/config/AGENTS.md"
 }
 
 # Card pointer: the section written into each CLI's global instruction file. It must contain the literal
@@ -526,10 +535,30 @@ cmd_install() {
         fi
         ;;
     esac
+    # Antigravity runs commands in a terminal sandbox that blocks the herdr socket. A command(patmat)
+    # allow rule lets the agent rerun patmat outside the sandbox without an approval prompt.
+    if [ "$bin" = agy ]; then
+      local agyset=$HOME/.gemini/antigravity-cli/settings.json tmp
+      if [ -f "$agyset" ] && grep -qF '"command(patmat)"' "$agyset"; then
+        printf '  ready      %s allows patmat\n' "$agyset"
+      else
+        mkdir -p "$(dirname "$agyset")"
+        [ -s "$agyset" ] || printf '{}\n' >"$agyset"
+        tmp=$(mktemp "$agyset.XXXXXX")
+        if jq '.permissions.allow = ((.permissions.allow // []) + ["command(patmat)"] | unique)' "$agyset" >"$tmp" 2>/dev/null; then
+          chmod 600 "$tmp"
+          mv "$tmp" "$agyset"
+          printf '  wrote      command(patmat) allow rule -> %s\n' "$agyset"
+        else
+          rm -f "$tmp"
+          printf '  todo       %s is not valid JSON; add "command(patmat)" to permissions.allow by hand\n' "$agyset"
+        fi
+      fi
+    fi
   done <<EOF
 $(known_clis)
 EOF
-  [ "$found" = 1 ] || printf 'No supported CLI found (claude, codex, grok). Install one of them, then rerun patmat install.\n'
+  [ "$found" = 1 ] || printf 'No supported CLI found (claude, codex, grok, agy). Install one of them, then rerun patmat install.\n'
 
   printf 'herdr sidebar:\n'
   local cfg=${HERDR_CONFIG_PATH:-$HOME/.config/herdr/config.toml}
@@ -559,7 +588,7 @@ EOF
 }
 
 cmd_doctor() {
-  local bad=0
+  local bad=0 PATMAT_SOFT_SOCKET=1
   ok() { printf '  ok  %s\n' "$*"; }
   miss() {
     printf '  !!  %s\n' "$*"
@@ -624,12 +653,13 @@ cmd_doctor() {
     command -v "$bin" >/dev/null 2>&1 || continue
     if [ -r "$skills/pat-mat/SKILL.md" ]; then ok "$bin can read the skill ($skills/pat-mat)"; else miss "$bin cannot read the skill: run patmat install"; fi
     if [ -f "$file" ] && grep -q 'patmat card' "$file"; then ok "$bin's global instructions have the card pointer (${file})"; else miss "$bin's global instructions lack the card pointer: run patmat install"; fi
+    if [ "$bin" = agy ]; then
+      if grep -qF '"command(patmat)"' "$HOME/.gemini/antigravity-cli/settings.json" 2>/dev/null; then ok "agy allows patmat outside its sandbox"; else miss "agy lacks the command(patmat) allow rule: run patmat install"; fi
+    fi
   done <<EOF
 $(known_clis)
 EOF
-  for bin in kimi agy; do
-    command -v "$bin" >/dev/null 2>&1 && note "${bin}: check its docs for where its skill directory and global instruction file live, and confirm both are in place"
-  done
+  command -v kimi >/dev/null 2>&1 && note "kimi: check its docs for where its skill directory and global instruction file live, and confirm both are in place"
 
   if [ "$bad" = 0 ]; then
     printf 'All set.\n'

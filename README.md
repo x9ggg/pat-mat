@@ -23,7 +23,7 @@ Requires macOS, [herdr](https://github.com/herdrdev/herdr), `curl`, `git`, `jq`,
    curl -fsSL https://raw.githubusercontent.com/x9ggg/pat-mat/main/install.sh | bash
    ```
 
-   It clones or updates `~/pat-mat` and configures installed Claude Code, Codex, and Grok CLIs and the herdr sidebar. You can rerun it to update. Check the output for skipped steps and PATH notices.
+   It clones or updates `~/pat-mat` and configures installed Claude Code, Codex, Grok, and Antigravity CLIs and the herdr sidebar. You can rerun it to update. Check the output for skipped steps and PATH notices.
 2. Run `herdr`, then start or restart your agent in a pane. It will post a card when it receives a task.
 3. If setup reports unfinished steps, or you use another CLI, a custom sidebar, or a sandbox, tell your agent **“Set up pat&mat.”** It can follow [SETUP.md](SETUP.md).
 
@@ -43,7 +43,7 @@ You can also say:
 
 ## Support
 
-Claude Code, Codex, and Grok have been tested on macOS with herdr 0.9.5. Kimi and Antigravity have not yet been tested.
+Claude Code, Codex, Grok, and Antigravity have been tested on macOS with herdr 0.9.5. Kimi has not yet been tested.
 
 ## License
 
