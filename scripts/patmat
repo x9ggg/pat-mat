@@ -16,20 +16,20 @@ usage() {
 patmat: messenger between coding agents on herdr
 
   patmat who [--json]                     roster: who is online, what they own, what they are doing
-  patmat card [--short SHORT] [--name N] [--role TEXT] [--doing TEXT]
+  patmat card [--name NAME] [--full-name N] [--role TEXT] [--doing TEXT]
                                           post or update your own card (--doing "" clears it).
-                                          SHORT is for the user and leads the sidebar row; name N is the address between agents
+                                          NAME is for the user and leads the sidebar row; full name N is the address between agents
   patmat ask <target> [-s SUBJECT]        ask a question or request work; body on stdin; prints this ask's id
   patmat reply <target> --re <id>         reply to an ask; body on stdin
   patmat tell <target>                    one-way notice; body on stdin
-  patmat spawn <kind> [--short SHORT] [--name N] [--cwd DIR] [--role TEXT] [-- CLI args...]
-                                          start another CLI as a sub-agent in a new tab, labelled with its short name
-  patmat dismiss <name> [--force]         close a sub-agent you started
+  patmat spawn <kind> [--name NAME] [--full-name N] [--cwd DIR] [--role TEXT] [-- CLI args...]
+                                          start another CLI as a sub-agent in a new tab, labelled with its name
+  patmat dismiss <full name> [--force]         close a sub-agent you started
   patmat install                          install into every supported CLI on this machine (Claude Code, Codex, Grok, Antigravity); safe to rerun
   patmat pointer                          print the card pointer, for adding by hand to other CLIs' global instruction files
   patmat doctor                           check that the install on this machine is complete
 
-<target> is a name from the roster or a pane id (e.g. db, w3:p1); name@pane also works.
+<target> is a full name from the roster or a pane id (e.g. db, w3:p1); fullname@pane also works.
 Pass the body as a quoted heredoc; it is delivered verbatim:
 
   patmat ask db -s "clear test table" <<'EOF_BODY'
@@ -148,7 +148,7 @@ load_self() {
     SELF_NAME="" SELF_KIND=shell SELF_PANE=$pane SELF_CWD=$PWD SELF_IS_AGENT=0
   fi
   if [ "$SELF_IS_AGENT" = 1 ] && [ -n "${CODEX_THREAD_ID:-}" ]; then
-    [ -n "$SELF_NAME" ] || auto_name || die "Automatic naming failed; set a name with patmat card --name."
+    [ -n "$SELF_NAME" ] || auto_name || die "Automatic naming failed; set a full name with patmat card --full-name."
     if [ "$sid" != "$CODEX_THREAD_ID" ] || [ "$tname" != "$SELF_NAME" ]; then
       herdr_call pane report-metadata "$SELF_PANE" --source "$SOURCE" --token "sid=$CODEX_THREAD_ID" --token "name=$SELF_NAME" || die "Failed to claim pane ${SELF_PANE}: ${HERR_MSG}"
     fi
@@ -253,11 +253,14 @@ cmd_who() {
 
 cmd_card() {
   need_herdr
+  # Variable and token names predate the current terms: short (token short, $short in the sidebar) holds
+  # the name shown to the user; name (token name) holds the full name, the address between agents.
+  # --short stays accepted as an old spelling of --name.
   local name="" short="" role="" doing="" has_short=0 has_role=0 has_doing=0
   while [ $# -gt 0 ]; do
     case "$1" in
-      --name) name=${2:?--name needs a value}; shift 2 ;;
-      --short) short=${2?--short needs a value}; has_short=1; shift 2 ;;
+      --full-name) name=${2:?--full-name needs a value}; shift 2 ;;
+      --name | --short) short=${2?$1 needs a value}; has_short=1; shift 2 ;;
       --role) role=${2?--role needs a value}; has_role=1; shift 2 ;;
       --doing) doing=${2?--doing needs a value}; has_doing=1; shift 2 ;;
       *) die "card: unknown argument $1" ;;
@@ -267,13 +270,13 @@ cmd_card() {
   [ "$SELF_IS_AGENT" = 1 ] || die "herdr does not see an agent in this pane, so no card can be posted."
 
   if [ -n "$name" ]; then
-    [[ "$name" =~ $NAME_RE ]] || die 'The name must match [a-z][a-z0-9_-]{0,31}: '"${name}"
+    [[ "$name" =~ $NAME_RE ]] || die 'The full name must match [a-z][a-z0-9_-]{0,31}: '"${name}"
     if [ "$name" != "$SELF_NAME" ]; then
       herdr_call agent rename "$SELF_PANE" "$name" || die "Failed to rename to ${name}: ${HERR_MSG}"
       SELF_NAME=$name
     fi
   elif [ -z "$SELF_NAME" ]; then
-    auto_name || die "Automatic naming failed (all candidate names are taken); set one with --name."
+    auto_name || die "Automatic naming failed (all candidate names are taken); set one with --full-name."
   fi
 
   local args=(--token "name=$SELF_NAME")
@@ -357,14 +360,14 @@ $BODY
 
 cmd_spawn() {
   need_herdr
-  [ $# -ge 1 ] || die "usage: patmat spawn <kind> [--short SHORT] [--name N] [--cwd DIR] [--role TEXT] [-- CLI args...]"
+  [ $# -ge 1 ] || die "usage: patmat spawn <kind> [--name NAME] [--full-name N] [--cwd DIR] [--role TEXT] [-- CLI args...]"
   local kind=$1 name="" short="" cwd=$PWD role="" extra=()
   shift
   while [ $# -gt 0 ]; do
     case "$1" in
-      --name) name=${2:?--name needs a value}; shift 2 ;;
+      --full-name) name=${2:?--full-name needs a value}; shift 2 ;;
       --cwd) cwd=${2:?--cwd needs a value}; shift 2 ;;
-      --short) short=${2:?--short needs a value}; shift 2 ;;
+      --name | --short) short=${2:?$1 needs a value}; shift 2 ;;
       --role) role=${2:?--role needs a value}; shift 2 ;;
       --) shift; extra=("$@"); break ;;
       *) die "spawn: unknown argument $1" ;;
@@ -376,10 +379,10 @@ cmd_spawn() {
   esac
   [ -d "$cwd" ] || die "Directory does not exist: ${cwd}"
   cwd=$(cd "$cwd" && pwd)
-  [ -z "$name" ] || [[ "$name" =~ $NAME_RE ]] || die 'The name must match [a-z][a-z0-9_-]{0,31}: '"${name}"
+  [ -z "$name" ] || [[ "$name" =~ $NAME_RE ]] || die 'The full name must match [a-z][a-z0-9_-]{0,31}: '"${name}"
   load_self
 
-  # Each sub-agent gets its own tab in the caller's workspace, labelled with its short name (or name),
+  # Each sub-agent gets its own tab in the caller's workspace, labelled with its name (or full name),
   # so the caller's tab keeps its layout and the user can switch to the sub-agent from the tab bar.
   local ws base tab pane
   herdr_call pane get "$SELF_PANE" || die "Failed to look up your pane: ${HERR_MSG}"
@@ -425,7 +428,7 @@ cmd_spawn() {
 
 cmd_dismiss() {
   need_herdr
-  [ $# -ge 1 ] || die "usage: patmat dismiss <name> [--force]"
+  [ $# -ge 1 ] || die "usage: patmat dismiss <full name> [--force]"
   local force=0
   [ "${2:-}" = --force ] && force=1
   load_self
@@ -467,8 +470,15 @@ pointer_text() {
   cat <<'EOF'
 ## pat&mat
 
-When working inside herdr (environment variable HERDR_ENV=1), on receiving a task first run `patmat card --short "<a short name that lets the user recognize this session at a glance, at most 12 columns wide: about 6 CJK characters or 12 Latin letters>" --role "<what you own>" --doing "<what you are doing>"` to post your card, and update --doing when you switch tasks. Write the short name, role, and doing in the user's language, putting the key point first: the sidebar shows only the first ~20 columns of role and doing. To collaborate with other agents, or when you receive a message starting with [pat&mat, use the pat-mat skill; if that skill is not available, run `patmat help`.
+When working inside herdr (environment variable HERDR_ENV=1), on receiving a task first run `patmat card --name "<a name that lets the user recognize this session at a glance, at most 12 columns wide: about 6 CJK characters or 12 Latin letters>" --role "<what you own>" --doing "<what you are doing>"` to post your card, and update --doing when you switch tasks. Write the name, role, and doing in the user's language, putting the key point first: the sidebar shows only the first ~20 columns of role and doing. To collaborate with other agents, or when you receive a message starting with [pat&mat, use the pat-mat skill; if that skill is not available, run `patmat help`.
 EOF
+}
+
+# pointer_current <file>: true when the file's "## pat&mat" section matches the current pointer text,
+# or when the file has no such heading (a pointer added by hand is left alone).
+pointer_current() {
+  grep -q '^## pat&mat$' "$1" || return 0
+  [ "$(awk '/^## pat&mat$/ { on = 1; print; next } on && /^## / { exit } on { print }' "$1" | grep -v '^[[:space:]]*$')" = "$(pointer_text | grep -v '^[[:space:]]*$')" ]
 }
 
 # Real path of this script (through symlinks).
@@ -523,8 +533,20 @@ cmd_install() {
     found=1
     printf '%s:\n' "$bin"
     ensure_link "$root" "$skills/pat-mat"
-    if [ -f "$file" ] && grep -q 'patmat card' "$file"; then
+    if [ -f "$file" ] && grep -q 'patmat card' "$file" && pointer_current "$file"; then
       printf '  ready      %s has the card pointer\n' "$file"
+    elif [ -f "$file" ] && grep -q 'patmat card' "$file"; then
+      # Replace the outdated "## pat&mat" section in place, up to the next "## " heading.
+      local tmp
+      tmp=$(mktemp "${file}.XXXXXX")
+      PATMAT_POINTER=$(pointer_text) awk '
+        /^## pat&mat$/ { print ENVIRON["PATMAT_POINTER"]; skip = 1; next }
+        skip && /^## / { skip = 0; print "" }
+        !skip { print }
+      ' "$file" >"$tmp"
+      cat "$tmp" >"$file"
+      rm -f "$tmp"
+      printf '  updated    card pointer -> %s\n' "$file"
     else
       mkdir -p "$(dirname "$file")"
       {
@@ -661,7 +683,13 @@ cmd_doctor() {
   while IFS='|' read -r bin id skills file; do
     command -v "$bin" >/dev/null 2>&1 || continue
     if [ -r "$skills/pat-mat/SKILL.md" ]; then ok "$bin can read the skill ($skills/pat-mat)"; else miss "$bin cannot read the skill: run patmat install"; fi
-    if [ -f "$file" ] && grep -q 'patmat card' "$file"; then ok "$bin's global instructions have the card pointer (${file})"; else miss "$bin's global instructions lack the card pointer: run patmat install"; fi
+    if ! { [ -f "$file" ] && grep -q 'patmat card' "$file"; }; then
+      miss "$bin's global instructions lack the card pointer: run patmat install"
+    elif pointer_current "$file"; then
+      ok "$bin's global instructions have the card pointer (${file})"
+    else
+      miss "$bin's card pointer is outdated (${file}): run patmat install"
+    fi
     if [ "$bin" = agy ]; then
       if grep -qF '"command(patmat)"' "$HOME/.gemini/antigravity-cli/settings.json" 2>/dev/null; then ok "agy allows patmat outside its sandbox"; else miss "agy lacks the command(patmat) allow rule: run patmat install"; fi
     fi

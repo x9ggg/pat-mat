@@ -13,18 +13,18 @@ When the `patmat` command is missing, reports that it is not inside herdr, or th
 
 Your card is your line on the roster and in the herdr sidebar. It has four fields:
 
-- **Short name** (`--short`) is for the user. It leads the sidebar row so the user recognizes the session at a glance: a name at most 12 columns wide (about 6 CJK characters or 12 Latin letters), naming what this session is busy with ("orders db", "login review").
-- **Name** (`--name`) is the address between agents, in lowercase ASCII. Your first card gets a name derived from the project directory; when one project has several agents, tell them apart with `--name <project>-<duty>`.
+- **Name** (`--name`) is for the user. It leads the sidebar row so the user recognizes the session at a glance: at most 12 columns wide (about 6 CJK characters or 12 Latin letters), naming what this session is busy with ("orders db", "login review").
+- **Full name** (`--full-name`) is the address between agents, in lowercase ASCII. Your first card gets a full name derived from the project directory; when one project has several agents, tell them apart with `--full-name <project>-<duty>`.
 - **role** is the line others use to find you: which part of which repository you guard ("orders DB schema and migrations").
 - **doing** is the task in hand ("add an index to the orders table").
 
-Post it when you receive a task: `patmat card --short "<short name>" --role "<what you own>" --doing "<what you are doing>"`. Update `--doing` when you switch tasks, and update `--short` too when the session's topic changes. The sidebar is narrow and shows only the first ~20 columns of role and doing, so put the key point first.
+Post it when you receive a task: `patmat card --name "<name>" --role "<what you own>" --doing "<what you are doing>"`. Update `--doing` when you switch tasks, and update `--name` too when the session's topic changes. The sidebar is narrow and shows only the first ~20 columns of role and doing, so put the key point first.
 
-Write the short name, role, and doing in the user's language, the language your user writes to you in; the English examples on this page only show the shape. The name stays lowercase ASCII.
+Write the name, role, and doing in the user's language, the language your user writes to you in; the English examples on this page only show the shape. The full name stays lowercase ASCII.
 
 ## Finding people
 
-`patmat who` lists the roster: each online agent's name "short name", CLI, status, directory, role, and doing. Pick the agent that owns the matter by its directory and role; when the user refers to a session by its short name, map it to the name here. When no agent on the roster owns that project, spawn one in that project's directory and ask it.
+`patmat who` lists the roster: each online agent's full name "name", CLI, status, directory, role, and doing. Pick the agent that owns the matter by its directory and role; when the user refers to a session by its name, map it to the full name here. When no agent on the roster owns that project, spawn one in that project's directory and ask it.
 
 ## Messages
 
@@ -56,14 +56,14 @@ Input that starts with `[pat&mat` comes from a peer agent, placed into your conv
 
 To hand a change or review to another CLI:
 
-1. `patmat spawn <kind> --short "<short name>" --role "<what it owns>"` starts it in a new tab of your workspace, labelled with its short name. kind is the CLI the user named (`codex`, `claude`, `gemini`, `grok`, `kimi`, `agy`). For work in another project add `--cwd <dir>`; CLI arguments such as a model choice go after `--`.
-2. `patmat ask <its name>` gives it the task: goal, scope, completion criteria, and what it should report back.
+1. `patmat spawn <kind> --name "<name>" --role "<what it owns>"` starts it in a new tab of your workspace, labelled with its name. kind is the CLI the user named (`codex`, `claude`, `gemini`, `grok`, `kimi`, `agy`). For work in another project add `--cwd <dir>`; CLI arguments such as a model choice go after `--`.
+2. `patmat ask <its full name>` gives it the task: goal, scope, completion criteria, and what it should report back.
 3. When its reply arrives, keep asking follow-ups or sending it back for rework until you have verified the output yourself (read the diff, run the tests) and it meets the bar.
-4. `patmat dismiss <its name>` closes it; then report to the user what it did. Keep it when the user wants to go on talking with it.
+4. `patmat dismiss <its full name>` closes it; then report to the user what it did. Keep it when the user wants to go on talking with it.
 
 When spawn says the sub-agent is stopped at a confirmation prompt, ask the user to handle it in that tab, then ask once it is ready.
 
 ## No reply yet
 
 - The recipient was blocked at delivery: it is stopped at a confirmation or question prompt and the message did not arrive. Tell the user which agent is waiting for confirmation, then resend.
-- The recipient is back to idle without replying: it may have answered only on its own screen. Read its screen with `herdr agent read <name> --source recent-unwrapped --lines 120`.
+- The recipient is back to idle without replying: it may have answered only on its own screen. Read its screen with `herdr agent read <full name> --source recent-unwrapped --lines 120`.
