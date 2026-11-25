@@ -11,7 +11,7 @@ pat&mat 是一个 skill，让同一个 [herdr](https://github.com/herdrdev/herdr
 - 在 herdr 侧边栏显示各 agent 的短名、职责和正在做的事。
 - 不用学习命令，像平时一样对 agent 说话即可。
 
-skill 说明文档和 `patmat` 输出目前是中文。
+skill 说明文档是英文。`patmat` 输出支持中英双语：locale 为中文（`zh*`）时输出中文，否则输出英文；可用 `patmat lang zh` 或 `patmat lang en` 切换，或用环境变量 `PATMAT_LANG` 只对当前 shell 生效。
 
 ## 安装
 

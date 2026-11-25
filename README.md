@@ -11,7 +11,7 @@ pat&mat is a skill that helps coding agents across projects and CLI tools collab
 - Show each agent’s short label, role, and current work in the herdr sidebar.
 - Let you ask in plain language, without learning commands.
 
-The skill documentation and `patmat` output are currently in Chinese.
+The skill documentation is in English. `patmat` output is in English or Chinese: it follows a Chinese (`zh*`) locale and is English otherwise; switch with `patmat lang zh` or `patmat lang en`, or set `PATMAT_LANG` for one shell.
 
 ## Install
 
