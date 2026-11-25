@@ -13,12 +13,14 @@ When the `patmat` command is missing, reports that it is not inside herdr, or th
 
 Your card is your line on the roster and in the herdr sidebar. It has four fields:
 
-- **Short name** (`--short`) is for the user. It leads the sidebar row so the user recognizes the session at a glance: one or two words, 12 characters at most, naming what this session is busy with ("orders db", "login review").
+- **Short name** (`--short`) is for the user. It leads the sidebar row so the user recognizes the session at a glance: a name at most 12 columns wide (about 6 CJK characters or 12 Latin letters), naming what this session is busy with ("orders db", "login review").
 - **Name** (`--name`) is the address between agents, in lowercase ASCII. Your first card gets a name derived from the project directory; when one project has several agents, tell them apart with `--name <project>-<duty>`.
 - **role** is the line others use to find you: which part of which repository you guard ("orders DB schema and migrations").
 - **doing** is the task in hand ("add an index to the orders table").
 
-Post it when you receive a task: `patmat card --short "<short name>" --role "<what you own>" --doing "<what you are doing>"`. Update `--doing` when you switch tasks, and update `--short` too when the session's topic changes. The sidebar is narrow and shows only the first ~20 characters of role and doing, so put the key point first.
+Post it when you receive a task: `patmat card --short "<short name>" --role "<what you own>" --doing "<what you are doing>"`. Update `--doing` when you switch tasks, and update `--short` too when the session's topic changes. The sidebar is narrow and shows only the first ~20 columns of role and doing, so put the key point first.
+
+Write the short name, role, and doing in the user's language, the language your user writes to you in; the English examples on this page only show the shape. The name stays lowercase ASCII.
 
 ## Finding people
 
@@ -26,7 +28,7 @@ Post it when you receive a task: `patmat card --short "<short name>" --role "<wh
 
 ## Messages
 
-Three kinds of message. Each body goes on stdin as a quoted heredoc and is delivered verbatim:
+Three kinds of message. Each body goes on stdin as a quoted heredoc and is delivered verbatim. The user reads every exchange in the recipient's pane, so write the body in the user's language; the example below is in English only for illustration:
 
 - **ask**: a question or a request for work; it waits for one reply.
 

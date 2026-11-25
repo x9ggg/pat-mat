@@ -1,6 +1,6 @@
 # Setting up pat&mat
 
-Done when: `patmat doctor` prints "All set." (Chinese output: "全部就绪。"), and the user sees your card in the herdr sidebar.
+Done when: `patmat doctor` prints "All set.", and the user sees your card in the herdr sidebar.
 
 1. **Install**. First tell the user what `patmat install` will change; once they agree, run `scripts/patmat install` from this skill's directory:
 
@@ -10,9 +10,7 @@ Done when: `patmat doctor` prints "All set." (Chinese output: "全部就绪。")
 
    The command is safe to rerun: what is already in place is skipped, and paths occupied by something else are left untouched. When herdr is not installed, first walk the user through installing it from https://herdr.dev.
 
-   `patmat` output follows a `zh*` locale and is English otherwise; when the user wants the other language, run `patmat lang zh` or `patmat lang en`.
-
-2. **Fill the gaps**. Handle every item the install output marks "skipped", "todo", or "note" (Chinese output: 跳过, 未完成, 注意), plus the three cases it does not handle:
+2. **Fill the gaps**. Handle every item the install output marks "skipped", "todo", or "note", plus the three cases it does not handle:
 
    - **Other CLIs** (Kimi, Antigravity, etc.): find the global skill directory and the global instruction file in its docs or `--help`, symlink this skill directory into the former, and append the output of `patmat pointer` to the latter. A CLI without a skill mechanism gets only the pointer; it takes part through the instructions carried in each message envelope.
    - **User-customized sidebar**: add `$short`, `$role`, `$doing` to their existing `[ui.sidebar.agents]` rows, with the short name first, then run `herdr server reload-config`. The name is shown by the built-in `agent` token.

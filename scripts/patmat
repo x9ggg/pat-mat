@@ -1,29 +1,10 @@
 #!/usr/bin/env bash
-# patmat: herdr 上 coding agent 之间的信使。用法见 `patmat help`。
+# patmat: messenger between coding agents on herdr. See `patmat help` for usage.
 set -euo pipefail
 
 SOURCE=patmat
-DOING_TTL_MS=21600000 # doing 6 小时后自动消失，避免陈旧状态长期挂在侧边栏
+DOING_TTL_MS=21600000 # doing expires after 6 hours so stale status does not linger in the sidebar
 NAME_RE='^[a-z][a-z0-9_-]{0,31}$'
-LANG_FILE=$HOME/.config/patmat/lang
-
-# 输出语言：PATMAT_LANG > ~/.config/patmat/lang > locale（LC_ALL、LC_MESSAGES、LANG）> 英文。
-detect_lang() {
-  local v loc
-  case "${PATMAT_LANG:-}" in zh | en) printf '%s' "$PATMAT_LANG"; return ;; esac
-  if [ -r "$LANG_FILE" ]; then
-    v=$(tr -d '[:space:]' <"$LANG_FILE")
-    case "$v" in zh | en) printf '%s' "$v"; return ;; esac
-  fi
-  loc=${LC_ALL:-${LC_MESSAGES:-${LANG:-}}}
-  case "$loc" in zh*) printf zh ;; *) printf en ;; esac
-}
-PM_LANG=$(detect_lang)
-
-# t <中文> <英文>：按输出语言选一句。
-t() {
-  if [ "$PM_LANG" = en ]; then printf '%s' "$2"; else printf '%s' "$1"; fi
-}
 
 die() {
   printf 'patmat: %s\n' "$*" >&2
@@ -31,8 +12,7 @@ die() {
 }
 
 usage() {
-  if [ "$PM_LANG" = en ]; then
-    cat <<'EOF'
+  cat <<'EOF'
 patmat: messenger between coding agents on herdr
 
   patmat who [--json]                     roster: who is online, what they own, what they are doing
@@ -48,7 +28,6 @@ patmat: messenger between coding agents on herdr
   patmat install                          install into every supported CLI on this machine (Claude Code, Codex, Grok); safe to rerun
   patmat pointer                          print the card pointer, for adding by hand to other CLIs' global instruction files
   patmat doctor                           check that the install on this machine is complete
-  patmat lang [zh|en]                     show or save the output language (the PATMAT_LANG env var takes precedence)
 
 <target> is a name from the roster or a pane id (e.g. db, w3:p1); name@pane also works.
 Pass the body as a quoted heredoc; it is delivered verbatim:
@@ -57,36 +36,9 @@ Pass the body as a quoted heredoc; it is delivered verbatim:
   Please clear the orders_test table in the staging database.
   EOF_BODY
 EOF
-  else
-    cat <<'EOF'
-patmat: herdr 上 coding agent 之间的信使
-
-  patmat who [--json]                     花名册：谁在线、负责什么、正在做什么
-  patmat card [--short 短名] [--name N] [--role 文本] [--doing 文本]
-                                          挂出或更新自己的名片（--doing "" 清空）。
-                                          短名给用户看，排在侧边栏最前；名字 N 是 agent 之间的地址
-  patmat ask <对象> [-s 主题]             提问或请对方办事，正文走 stdin，输出本次 ask 的 id
-  patmat reply <对象> --re <id>           答复一个 ask，正文走 stdin
-  patmat tell <对象>                      单向通知，正文走 stdin
-  patmat spawn <kind> [--short 短名] [--name N] [--cwd 目录] [--role 文本] [-- CLI 参数...]
-                                          在旁边的 pane 启动另一家 CLI 作为子 agent
-  patmat dismiss <名字> [--force]         关闭自己启动的子 agent
-  patmat install                          装进本机每家已适配的 CLI（Claude Code、Codex、Grok），可重复执行
-  patmat pointer                          打印名片指针，供手动加进其他 CLI 的全局指令文件
-  patmat doctor                           检查本机安装是否完整
-  patmat lang [zh|en]                     查看或保存输出语言（环境变量 PATMAT_LANG 优先）
-
-<对象> 是花名册里的名字或 pane id（如 db、w3:p1），也接受 名字@pane。
-正文用带引号的 heredoc 传入，原样送达：
-
-  patmat ask db -s "清空测试表" <<'EOF_BODY'
-  请清空 staging 库的 orders_test 表。
-  EOF_BODY
-EOF
-  fi
 }
 
-# 调用 herdr；成功时结果在 HOUT，失败时错误在 HERR_CODE / HERR_MSG。
+# Call herdr; on success the result is in HOUT, on failure the error is in HERR_CODE / HERR_MSG.
 herdr_call() {
   local errf
   errf=$(mktemp -t patmat.XXXXXX)
@@ -103,10 +55,10 @@ herdr_call() {
 }
 
 need_herdr() {
-  command -v herdr >/dev/null 2>&1 || die "$(t "找不到 herdr。安装见 https://herdr.dev" "herdr not found. Install it from https://herdr.dev")"
-  command -v jq >/dev/null 2>&1 || die "$(t "找不到 jq" "jq not found")"
+  command -v herdr >/dev/null 2>&1 || die "herdr not found. Install it from https://herdr.dev"
+  command -v jq >/dev/null 2>&1 || die "jq not found"
   if [ "${HERDR_ENV:-}" != 1 ] || [ -z "${HERDR_PANE_ID:-}" ]; then
-    die "$(t "当前不在 herdr 的 pane 里（HERDR_ENV≠1）。请在 herdr 中启动这个 agent 后再用。" "Not inside a herdr pane (HERDR_ENV≠1). Start this agent inside herdr, then try again.")"
+    die "Not inside a herdr pane (HERDR_ENV≠1). Start this agent inside herdr, then try again."
   fi
 }
 
@@ -118,15 +70,16 @@ tilde() {
   esac
 }
 
-# 把任意文本压成合法的 agent 名字；压不出来则输出空。
+# Squash arbitrary text into a valid agent name; prints nothing if that is impossible.
 slug() {
   printf '%s' "$1" | tr '[:upper:]' '[:lower:]' | sed -E 's/[^a-z0-9_-]+/-/g; s/^[^a-z]+//; s/-+$//' | cut -c1-28
 }
 
-# Codex 的多个会话共用一个后台进程执行命令，命令继承的是第一个会话的 HERDR_PANE_ID，
-# 所以在 Codex 里要靠 CODEX_THREAD_ID 认出自己的 pane，认领时把线程 id 记进该 pane 的 sid token。
-# 认领依据：调用 patmat 的会话此刻必然在 working。别人的认领是否还有效，看那个 pane 上活着的名字
-# 是否等于认领时记下的 name token（agent 退出时 herdr 会清掉名字）。成功时结果在 CODEX_PANE。
+# Codex sessions share one background process for running commands, and commands inherit the first
+# session's HERDR_PANE_ID, so inside Codex we find our own pane by CODEX_THREAD_ID and, when claiming it,
+# record the thread id in that pane's sid token. Basis for a claim: the session calling patmat must be
+# working right now. Someone else's claim is still valid if the live name on that pane equals the name
+# token recorded at claim time (herdr clears the name when the agent exits). On success the result is in CODEX_PANE.
 find_codex_pane() {
   local try
   CODEX_PANE=""
@@ -148,7 +101,7 @@ find_codex_pane() {
   return 1
 }
 
-# 给还没名字的自己起名：项目目录名，在家目录下则用 CLI 种类；重名时加编号。
+# Name ourselves when still unnamed: the project directory name, or the CLI kind in the home directory; add a number on a clash.
 auto_name() {
   local base try n
   base=$(slug "$(basename "${SELF_CWD:-$PWD}")")
@@ -163,7 +116,7 @@ auto_name() {
   return 1
 }
 
-# load_self [soft]：认出调用者。soft 时认不出也继续（SELF_PANE 为空），供只读命令使用。
+# load_self [soft]: identify the caller. With soft, carry on even if unidentified (SELF_PANE empty); for read-only commands.
 load_self() {
   local pane=$HERDR_PANE_ID sid="" tname=""
   if [ -n "${CODEX_THREAD_ID:-}" ]; then
@@ -172,7 +125,7 @@ load_self() {
     elif [ "${1:-}" = soft ]; then
       pane=""
     else
-      die "$(t "认不出本 Codex 会话在哪个 pane：有多个 Codex 会话同时在工作，而它们共用的后台进程只带着其中一个的 HERDR_PANE_ID。过几秒重试。" "Cannot tell which pane this Codex session is in: several Codex sessions are working at once, and the background process they share carries only one of their HERDR_PANE_IDs. Retry in a few seconds.")"
+      die "Cannot tell which pane this Codex session is in: several Codex sessions are working at once, and the background process they share carries only one of their HERDR_PANE_IDs. Retry in a few seconds."
     fi
   fi
   if [ -n "$pane" ] && herdr_call agent get "$pane"; then
@@ -187,9 +140,9 @@ load_self() {
     SELF_NAME="" SELF_KIND=shell SELF_PANE=$pane SELF_CWD=$PWD SELF_IS_AGENT=0
   fi
   if [ "$SELF_IS_AGENT" = 1 ] && [ -n "${CODEX_THREAD_ID:-}" ]; then
-    [ -n "$SELF_NAME" ] || auto_name || die "$(t "自动起名失败，请用 patmat card --name 指定名字。" "Automatic naming failed; set a name with patmat card --name.")"
+    [ -n "$SELF_NAME" ] || auto_name || die "Automatic naming failed; set a name with patmat card --name."
     if [ "$sid" != "$CODEX_THREAD_ID" ] || [ "$tname" != "$SELF_NAME" ]; then
-      herdr_call pane report-metadata "$SELF_PANE" --source "$SOURCE" --token "sid=$CODEX_THREAD_ID" --token "name=$SELF_NAME" || die "$(t "认领 pane ${SELF_PANE} 失败：${HERR_MSG}" "Failed to claim pane ${SELF_PANE}: ${HERR_MSG}")"
+      herdr_call pane report-metadata "$SELF_PANE" --source "$SOURCE" --token "sid=$CODEX_THREAD_ID" --token "name=$SELF_NAME" || die "Failed to claim pane ${SELF_PANE}: ${HERR_MSG}"
     fi
   fi
   SELF_ADDR=${SELF_NAME:-$SELF_PANE}
@@ -197,9 +150,9 @@ load_self() {
   if [ -n "$SELF_NAME" ]; then SELF_REPLY_TO="$SELF_NAME@$SELF_PANE"; else SELF_REPLY_TO=$SELF_PANE; fi
 }
 
-# 解析 <对象>，结果在 TGT / TGT_JSON。
-# 名字@pane 以 pane 为准（pane id 不会被复用）：那里的 agent 仍叫这个名字，或重启后还没起名，才算同一位；
-# pane 已不存在（被移动或关闭）时才退回按名字找。
+# Resolve <target>; the result is in TGT / TGT_JSON.
+# For name@pane the pane wins (pane ids are never reused): it is the same agent if the agent there still has
+# this name, or has restarted and is not yet named. Only when the pane no longer exists (moved or closed) fall back to the name.
 resolve() {
   local to=$1 first=${1%%@*} pane="" cur
   case "$to" in *@*) pane=${to#*@} ;; esac
@@ -209,13 +162,13 @@ resolve() {
       TGT=$pane TGT_JSON=$HOUT
       return 0
     fi
-    die "$(t "pane ${pane} 现在是 ${cur}，不是 ${first}，消息没有投递。运行 patmat who 核对。" "Pane ${pane} is now ${cur}, not ${first}; the message was not delivered. Run patmat who to check.")"
+    die "Pane ${pane} is now ${cur}, not ${first}; the message was not delivered. Run patmat who to check."
   fi
   if herdr_call agent get "$first"; then
     TGT=$first TGT_JSON=$HOUT
     return 0
   fi
-  die "$(t "花名册里找不到 ${to}。运行 patmat who 看看谁在线。" "${to} is not on the roster. Run patmat who to see who is online.")"
+  die "${to} is not on the roster. Run patmat who to see who is online."
 }
 
 new_id() {
@@ -223,13 +176,14 @@ new_id() {
 }
 
 read_body() {
-  [ -t 0 ] && die "$(t "正文走 stdin：patmat $1 ... <<'EOF' 换行写正文，再以 EOF 结束" "The body goes on stdin: patmat $1 ... <<'EOF', then the body on the following lines, ending with EOF")"
+  [ -t 0 ] && die "The body goes on stdin: patmat $1 ... <<'EOF', then the body on the following lines, ending with EOF"
   BODY=$(cat)
-  [ -n "${BODY//[[:space:]]/}" ] || die "$(t "正文是空的" "The body is empty")"
+  [ -n "${BODY//[[:space:]]/}" ] || die "The body is empty"
 }
 
-# deliver <对象> <全文> <id>：投递并确认对方开始处理。
-# herdr 的"写入成功"不等于对方收下（刚启动的 CLI 会吞掉输入），所以要看到它转入 working，或状态序号前进。
+# deliver <target> <full text> <id>: deliver and confirm the recipient has started on it.
+# herdr's "written" does not mean the recipient took it (a freshly started CLI swallows input), so wait
+# until it turns working, or its state sequence number advances.
 deliver() {
   local before after tries=0
   before=$(jq -r '.result.agent.state_change_seq // empty' <<<"$TGT_JSON")
@@ -237,7 +191,7 @@ deliver() {
     if herdr_call agent prompt "$1" "$2" --wait --until working --until blocked --timeout 30000; then return 0; fi
     case "$HERR_CODE" in
       agent_blocked)
-        die "$(t "$1 正停在确认或提问界面（blocked），消息没有投递。请用户去那个 pane 处理，之后重发。" "$1 is stopped at a confirmation or question prompt (blocked); the message was not delivered. Ask the user to handle that pane, then resend.")"
+        die "$1 is stopped at a confirmation or question prompt (blocked); the message was not delivered. Ask the user to handle that pane, then resend."
         ;;
       agent_prompt_stalled | timeout)
         if herdr_call agent get "$1"; then
@@ -245,59 +199,45 @@ deliver() {
           [ "$after" = "$before" ] || return 0
         fi
         if herdr_call agent read "$1" --source visible && grep -qF "$3" <<<"$HOUT"; then
-          die "$(t "消息已写到 $1 的屏幕上，但它没有开始处理。用 herdr agent read $1 --source visible 查看后再决定是否重发。" "The message is on $1's screen, but it has not started on it. Check with herdr agent read $1 --source visible before deciding whether to resend.")"
+          die "The message is on $1's screen, but it has not started on it. Check with herdr agent read $1 --source visible before deciding whether to resend."
         fi
         tries=$((tries + 1))
         if [ "$tries" -ge 2 ]; then
-          die "$(t "$1 没有收下消息（重试一次仍无反应），它可能还在启动或停在某个界面。用 herdr agent read $1 --source visible 查看。" "$1 did not take the message (no response after one retry); it may still be starting or stopped at some prompt. Check with herdr agent read $1 --source visible.")"
+          die "$1 did not take the message (no response after one retry); it may still be starting or stopped at some prompt. Check with herdr agent read $1 --source visible."
         fi
         ;;
       *)
-        die "$(t "投递给 $1 失败：${HERR_MSG:-未知错误}" "Delivery to $1 failed: ${HERR_MSG:-unknown error}")"
+        die "Delivery to $1 failed: ${HERR_MSG:-unknown error}"
         ;;
     esac
   done
 }
 
 target_brief() {
-  if [ "$PM_LANG" = en ]; then
-    jq -r '.result.agent | "\(.name // .pane_id) (\(.agent), \(.agent_status))"' <<<"$TGT_JSON"
-  else
-    jq -r '.result.agent | "\(.name // .pane_id)（\(.agent)，\(.agent_status)）"' <<<"$TGT_JSON"
-  fi
-}
-
-# 名片相关输出里的固定字样，按语言传给 jq。
-card_labels() {
-  if [ "$PM_LANG" = en ]; then
-    LABELS=(--arg ql ' "' --arg qr '"' --arg me_l ' (me)' --arg role_l 'role: ' --arg doing_l 'doing: ' --arg none '(none)' --arg sub_l 'sub-agent of ' --arg card_l 'card: ')
-  else
-    LABELS=(--arg ql '「' --arg qr '」' --arg me_l ' (我)' --arg role_l '负责：' --arg doing_l '在做：' --arg none '未声明' --arg sub_l '子 agent，属于 ' --arg card_l '名片：')
-  fi
+  jq -r '.result.agent | "\(.name // .pane_id) (\(.agent), \(.agent_status))"' <<<"$TGT_JSON"
 }
 
 cmd_who() {
   need_herdr
   load_self soft
-  herdr_call agent list || die "$(t "读取花名册失败：${HERR_MSG}" "Failed to read the roster: ${HERR_MSG}")"
+  herdr_call agent list || die "Failed to read the roster: ${HERR_MSG}"
   if [ "${1:-}" = --json ]; then
     jq '.result.agents' <<<"$HOUT"
     return
   fi
-  card_labels
-  jq -r --arg me "$SELF_PANE" --arg home "$HOME" "${LABELS[@]}" '
+  jq -r --arg me "$SELF_PANE" --arg home "$HOME" '
     .result.agents as $all
     | ($all | map({key: .pane_id, value: (.name // .pane_id)}) | from_entries) as $names
     | $all[]
     | (.cwd // "") as $cwd
     | [
-        ((.name // .pane_id) + (if .tokens.short then $ql + .tokens.short + $qr else "" end) + (if .pane_id == $me then $me_l else "" end)),
+        ((.name // .pane_id) + (if .tokens.short then " \"" + .tokens.short + "\"" else "" end) + (if .pane_id == $me then " (me)" else "" end)),
         .agent,
         .agent_status,
         (if $cwd == $home then "~" elif ($cwd | startswith($home + "/")) then "~" + $cwd[($home | length):] else $cwd end),
-        ($role_l + (.tokens.role // $none)),
-        ($doing_l + (.tokens.doing // .terminal_title_stripped // $none)),
-        (if .tokens.parent then $sub_l + ($names[.tokens.parent] // .tokens.parent) else "" end)
+        ("role: " + (.tokens.role // "(none)")),
+        ("doing: " + (.tokens.doing // .terminal_title_stripped // "(none)")),
+        (if .tokens.parent then "sub-agent of " + ($names[.tokens.parent] // .tokens.parent) else "" end)
       ]
     | map(select(. != "")) | join("  |  ")
   ' <<<"$HOUT"
@@ -308,52 +248,51 @@ cmd_card() {
   local name="" short="" role="" doing="" has_short=0 has_role=0 has_doing=0
   while [ $# -gt 0 ]; do
     case "$1" in
-      --name) name=${2:?$(t "--name 需要一个值" "--name needs a value")}; shift 2 ;;
-      --short) short=${2?$(t "--short 需要一个值" "--short needs a value")}; has_short=1; shift 2 ;;
-      --role) role=${2?$(t "--role 需要一个值" "--role needs a value")}; has_role=1; shift 2 ;;
-      --doing) doing=${2?$(t "--doing 需要一个值" "--doing needs a value")}; has_doing=1; shift 2 ;;
-      *) die "$(t "card 不认识参数 $1" "card: unknown argument $1")" ;;
+      --name) name=${2:?--name needs a value}; shift 2 ;;
+      --short) short=${2?--short needs a value}; has_short=1; shift 2 ;;
+      --role) role=${2?--role needs a value}; has_role=1; shift 2 ;;
+      --doing) doing=${2?--doing needs a value}; has_doing=1; shift 2 ;;
+      *) die "card: unknown argument $1" ;;
     esac
   done
   load_self
-  [ "$SELF_IS_AGENT" = 1 ] || die "$(t "herdr 没在本 pane 识别到 agent，无法挂名片。" "herdr does not see an agent in this pane, so no card can be posted.")"
+  [ "$SELF_IS_AGENT" = 1 ] || die "herdr does not see an agent in this pane, so no card can be posted."
 
   if [ -n "$name" ]; then
-    [[ "$name" =~ $NAME_RE ]] || die "$(t '名字须匹配 [a-z][a-z0-9_-]{0,31}：'"${name}" 'The name must match [a-z][a-z0-9_-]{0,31}: '"${name}")"
+    [[ "$name" =~ $NAME_RE ]] || die 'The name must match [a-z][a-z0-9_-]{0,31}: '"${name}"
     if [ "$name" != "$SELF_NAME" ]; then
-      herdr_call agent rename "$SELF_PANE" "$name" || die "$(t "起名 $name 失败：${HERR_MSG}" "Failed to rename to ${name}: ${HERR_MSG}")"
+      herdr_call agent rename "$SELF_PANE" "$name" || die "Failed to rename to ${name}: ${HERR_MSG}"
       SELF_NAME=$name
     fi
   elif [ -z "$SELF_NAME" ]; then
-    auto_name || die "$(t "自动起名失败（候选名都被占用），请用 --name 指定。" "Automatic naming failed (all candidate names are taken); set one with --name.")"
+    auto_name || die "Automatic naming failed (all candidate names are taken); set one with --name."
   fi
 
   local args=(--token "name=$SELF_NAME")
   [ "$has_short" = 1 ] && args+=(--token "short=$short")
   [ "$has_role" = 1 ] && args+=(--token "role=$role")
-  herdr_call pane report-metadata "$SELF_PANE" --source "$SOURCE" "${args[@]}" || die "$(t "上报名片失败：${HERR_MSG}" "Failed to report the card: ${HERR_MSG}")"
+  herdr_call pane report-metadata "$SELF_PANE" --source "$SOURCE" "${args[@]}" || die "Failed to report the card: ${HERR_MSG}"
   if [ "$has_doing" = 1 ]; then
     if [ -n "$doing" ]; then
-      herdr_call pane report-metadata "$SELF_PANE" --source "$SOURCE" --token "doing=$doing" --ttl-ms "$DOING_TTL_MS" || die "$(t "上报 doing 失败：${HERR_MSG}" "Failed to report doing: ${HERR_MSG}")"
+      herdr_call pane report-metadata "$SELF_PANE" --source "$SOURCE" --token "doing=$doing" --ttl-ms "$DOING_TTL_MS" || die "Failed to report doing: ${HERR_MSG}"
     else
-      herdr_call pane report-metadata "$SELF_PANE" --source "$SOURCE" --clear-token doing || die "$(t "清空 doing 失败：${HERR_MSG}" "Failed to clear doing: ${HERR_MSG}")"
+      herdr_call pane report-metadata "$SELF_PANE" --source "$SOURCE" --clear-token doing || die "Failed to clear doing: ${HERR_MSG}"
     fi
   fi
 
-  herdr_call agent get "$SELF_PANE" || die "$(t "读取名片失败：${HERR_MSG}" "Failed to read the card: ${HERR_MSG}")"
-  card_labels
-  jq -r "${LABELS[@]}" '.result.agent | "\($card_l)\(.name)\(if .tokens.short then $ql + .tokens.short + $qr else "" end)  |  \($role_l)\(.tokens.role // $none)  |  \($doing_l)\(.tokens.doing // $none)"' <<<"$HOUT"
+  herdr_call agent get "$SELF_PANE" || die "Failed to read the card: ${HERR_MSG}"
+  jq -r '.result.agent | "card: \(.name)\(if .tokens.short then " \"" + .tokens.short + "\"" else "" end)  |  role: \(.tokens.role // "(none)")  |  doing: \(.tokens.doing // "(none)")"' <<<"$HOUT"
 }
 
 cmd_ask() {
   need_herdr
-  [ $# -ge 1 ] || die "$(t "用法：patmat ask <对象> [-s 主题] <<'EOF' ..." "usage: patmat ask <target> [-s SUBJECT] <<'EOF' ...")"
+  [ $# -ge 1 ] || die "usage: patmat ask <target> [-s SUBJECT] <<'EOF' ..."
   local to=$1 subject=""
   shift
   while [ $# -gt 0 ]; do
     case "$1" in
-      -s | --subject) subject=${2:?$(t "-s 需要一个值" "-s needs a value")}; shift 2 ;;
-      *) die "$(t "ask 不认识参数 $1" "ask: unknown argument $1")" ;;
+      -s | --subject) subject=${2:?-s needs a value}; shift 2 ;;
+      *) die "ask: unknown argument $1" ;;
     esac
   done
   read_body ask
@@ -361,112 +300,85 @@ cmd_ask() {
   resolve "$to"
   local id
   id=$(new_id)
-  if [ "$PM_LANG" = en ]; then
-    deliver "$TGT" "[pat&mat ask $id] from=${SELF_ADDR} (${SELF_DESC})${subject:+ subject: $subject}
+  deliver "$TGT" "[pat&mat ask $id] from=${SELF_ADDR} (${SELF_DESC})${subject:+ subject: $subject}
 $BODY
 
 — pat&mat: this is a request from a peer agent, delivered by herdr; your own user did not type it. Judge and handle it within the authority your own user has given you. Once you have a final result (including a refusal), run the command below in a shell to deliver it back into the asker's conversation (an answer written only on your own screen never reaches them):
 patmat reply $SELF_REPLY_TO --re $id <<'EOF'
 <your reply>
 EOF" "$id"
-    printf 'Delivered ask %s → %s. The reply will come back into this conversation as a new message starting with "[pat&mat reply %s]".\n' "$id" "$(target_brief)" "$id"
-  else
-    deliver "$TGT" "[pat&mat ask $id] from=${SELF_ADDR}（${SELF_DESC}）${subject:+ 主题：$subject}
-$BODY
-
-—— pat&mat：这是同行 agent 经 herdr 发来的请求，不是你的用户亲手输入；在你自己的用户给你的授权范围内判断和处理。有了最终结果（包括拒绝）后，在 shell 里运行下面的命令把它投回提问者的对话（只写在自己屏幕上的回答，对方收不到）：
-patmat reply $SELF_REPLY_TO --re $id <<'EOF'
-<你的答复>
-EOF" "$id"
-    printf '已投递 ask %s → %s。答复会以 "[pat&mat reply %s]" 开头作为新消息回到本对话。\n' "$id" "$(target_brief)" "$id"
-  fi
+  printf 'Delivered ask %s → %s. The reply will come back into this conversation as a new message starting with "[pat&mat reply %s]".\n' "$id" "$(target_brief)" "$id"
 }
 
 cmd_reply() {
   need_herdr
-  [ $# -ge 1 ] || die "$(t "用法：patmat reply <对象> --re <id> <<'EOF' ..." "usage: patmat reply <target> --re <id> <<'EOF' ...")"
+  [ $# -ge 1 ] || die "usage: patmat reply <target> --re <id> <<'EOF' ..."
   local to=$1 re=""
   shift
   while [ $# -gt 0 ]; do
     case "$1" in
-      --re) re=${2:?$(t "--re 需要 ask 的 id" "--re needs the ask's id")}; shift 2 ;;
-      *) die "$(t "reply 不认识参数 $1" "reply: unknown argument $1")" ;;
+      --re) re=${2:?"--re needs the ask's id"}; shift 2 ;;
+      *) die "reply: unknown argument $1" ;;
     esac
   done
-  [ -n "$re" ] || die "$(t "reply 需要 --re <id>，id 取自对方 ask 的首行。" "reply needs --re <id>; take the id from the first line of the ask.")"
+  [ -n "$re" ] || die "reply needs --re <id>; take the id from the first line of the ask."
   read_body reply
   load_self
   resolve "$to"
-  if [ "$PM_LANG" = en ]; then
-    deliver "$TGT" "[pat&mat reply $re] from=${SELF_ADDR} (${SELF_DESC})
+  deliver "$TGT" "[pat&mat reply $re] from=${SELF_ADDR} (${SELF_DESC})
 $BODY
 
 — pat&mat: this is the reply to your ask $re, which is now closed; for a new question, send a new ask." "reply $re"
-    printf 'Delivered reply %s → %s.\n' "$re" "$(target_brief)"
-  else
-    deliver "$TGT" "[pat&mat reply $re] from=${SELF_ADDR}（${SELF_DESC}）
-$BODY
-
-—— pat&mat：这是对你 ask $re 的答复，到此结案；有新问题另发 ask。" "reply $re"
-    printf '已投递 reply %s → %s。\n' "$re" "$(target_brief)"
-  fi
+  printf 'Delivered reply %s → %s.\n' "$re" "$(target_brief)"
 }
 
 cmd_tell() {
   need_herdr
-  [ $# -eq 1 ] || die "$(t "用法：patmat tell <对象> <<'EOF' ..." "usage: patmat tell <target> <<'EOF' ...")"
+  [ $# -eq 1 ] || die "usage: patmat tell <target> <<'EOF' ..."
   read_body tell
   load_self
   resolve "$1"
   local id
   id=$(new_id)
-  if [ "$PM_LANG" = en ]; then
-    deliver "$TGT" "[pat&mat tell $id] from=${SELF_ADDR} (${SELF_DESC})
+  deliver "$TGT" "[pat&mat tell $id] from=${SELF_ADDR} (${SELF_DESC})
 $BODY
 
 — pat&mat: a notice from a peer agent; no reply needed." "$id"
-    printf 'Delivered tell %s → %s.\n' "$id" "$(target_brief)"
-  else
-    deliver "$TGT" "[pat&mat tell $id] from=${SELF_ADDR}（${SELF_DESC}）
-$BODY
-
-—— pat&mat：同行 agent 的通知，无需回复。" "$id"
-    printf '已投递 tell %s → %s。\n' "$id" "$(target_brief)"
-  fi
+  printf 'Delivered tell %s → %s.\n' "$id" "$(target_brief)"
 }
 
 cmd_spawn() {
   need_herdr
-  [ $# -ge 1 ] || die "$(t "用法：patmat spawn <kind> [--short 短名] [--name N] [--cwd 目录] [--role 文本] [-- CLI 参数...]" "usage: patmat spawn <kind> [--short SHORT] [--name N] [--cwd DIR] [--role TEXT] [-- CLI args...]")"
+  [ $# -ge 1 ] || die "usage: patmat spawn <kind> [--short SHORT] [--name N] [--cwd DIR] [--role TEXT] [-- CLI args...]"
   local kind=$1 name="" short="" cwd=$PWD role="" extra=()
   shift
   while [ $# -gt 0 ]; do
     case "$1" in
-      --name) name=${2:?$(t "--name 需要一个值" "--name needs a value")}; shift 2 ;;
-      --cwd) cwd=${2:?$(t "--cwd 需要一个值" "--cwd needs a value")}; shift 2 ;;
-      --short) short=${2:?$(t "--short 需要一个值" "--short needs a value")}; shift 2 ;;
-      --role) role=${2:?$(t "--role 需要一个值" "--role needs a value")}; shift 2 ;;
+      --name) name=${2:?--name needs a value}; shift 2 ;;
+      --cwd) cwd=${2:?--cwd needs a value}; shift 2 ;;
+      --short) short=${2:?--short needs a value}; shift 2 ;;
+      --role) role=${2:?--role needs a value}; shift 2 ;;
       --) shift; extra=("$@"); break ;;
-      *) die "$(t "spawn 不认识参数 $1" "spawn: unknown argument $1")" ;;
+      *) die "spawn: unknown argument $1" ;;
     esac
   done
   case "$kind" in
     antigravity | antigravity-cli) kind=agy ;;
     claude-code) kind=claude ;;
   esac
-  [ -d "$cwd" ] || die "$(t "目录不存在：${cwd}" "Directory does not exist: ${cwd}")"
+  [ -d "$cwd" ] || die "Directory does not exist: ${cwd}"
   cwd=$(cd "$cwd" && pwd)
-  [ -z "$name" ] || [[ "$name" =~ $NAME_RE ]] || die "$(t '名字须匹配 [a-z][a-z0-9_-]{0,31}：'"${name}" 'The name must match [a-z][a-z0-9_-]{0,31}: '"${name}")"
+  [ -z "$name" ] || [[ "$name" =~ $NAME_RE ]] || die 'The name must match [a-z][a-z0-9_-]{0,31}: '"${name}"
   load_self
 
-  # 宽 pane 向右分，其余向下分。
+  # Split wide panes to the right, others downward.
   local dir=down w h
   if herdr_call pane layout --pane "$SELF_PANE"; then
     w=$(jq -r --arg p "$SELF_PANE" '.result.layout.panes[] | select(.pane_id == $p) | .rect.width' <<<"$HOUT")
     h=$(jq -r --arg p "$SELF_PANE" '.result.layout.panes[] | select(.pane_id == $p) | .rect.height' <<<"$HOUT")
     if [ "${w:-0}" -ge 160 ] && [ "${w:-0}" -ge $((${h:-1} * 2)) ]; then dir=right; fi
   fi
-  herdr_call pane split "$SELF_PANE" --direction "$dir" --cwd "$cwd" --no-focus || die "$(t "分出新 pane 失败：${HERR_MSG}" "Failed to split a new pane: ${HERR_MSG}")"
+  herdr_call pane split "$SELF_PANE" --direction "$dir" --cwd "$cwd" --no-focus || die "Failed to split a new pane: ${HERR_MSG}"
   local pane
   pane=$(jq -r '.result.pane.pane_id' <<<"$HOUT")
 
@@ -487,7 +399,7 @@ cmd_spawn() {
   if [ -z "$started" ]; then
     local why=$HERR_MSG
     herdr_call pane close "$pane" || true
-    die "$(t "启动 $kind 失败：${why:-未知错误}" "Failed to start ${kind}: ${why:-unknown error}")"
+    die "Failed to start ${kind}: ${why:-unknown error}"
   fi
 
   local args=(--token "name=$started" --token "parent=$SELF_PANE")
@@ -496,17 +408,17 @@ cmd_spawn() {
   herdr_call pane report-metadata "$pane" --source "$SOURCE" "${args[@]}" || true
 
   if [ "$ready" = 1 ]; then
-    printf "$(t '已启动子 agent %s（%s，pane %s，cwd %s）。用 patmat ask %s 交代任务；验收后 patmat dismiss %s。\n' 'Started sub-agent %s (%s, pane %s, cwd %s). Give it the task with patmat ask %s; after you accept its work, patmat dismiss %s.\n')" \
+    printf 'Started sub-agent %s (%s, pane %s, cwd %s). Give it the task with patmat ask %s; after you accept its work, patmat dismiss %s.\n' \
       "$started" "$kind" "$pane" "$(tilde "$cwd")" "$started" "$started"
   else
-    printf "$(t '子 agent %s（%s，pane %s）已启动，但停在确认界面（例如是否信任该目录）。请用户到那个 pane 处理，就绪后再 patmat ask %s。\n' 'Sub-agent %s (%s, pane %s) started but is stopped at a confirmation prompt (e.g. whether to trust the directory). Ask the user to handle that pane, then patmat ask %s once it is ready.\n')" \
+    printf 'Sub-agent %s (%s, pane %s) started but is stopped at a confirmation prompt (e.g. whether to trust the directory). Ask the user to handle that pane, then patmat ask %s once it is ready.\n' \
       "$started" "$kind" "$pane" "$started"
   fi
 }
 
 cmd_dismiss() {
   need_herdr
-  [ $# -ge 1 ] || die "$(t "用法：patmat dismiss <名字> [--force]" "usage: patmat dismiss <name> [--force]")"
+  [ $# -ge 1 ] || die "usage: patmat dismiss <name> [--force]"
   local force=0
   [ "${2:-}" = --force ] && force=1
   load_self
@@ -515,15 +427,15 @@ cmd_dismiss() {
   parent=$(jq -r '.result.agent.tokens.parent // empty' <<<"$TGT_JSON")
   pane=$(jq -r '.result.agent.pane_id' <<<"$TGT_JSON")
   status=$(jq -r '.result.agent.agent_status' <<<"$TGT_JSON")
-  [ "$parent" = "$SELF_PANE" ] || die "$(t "$1 不是你启动的子 agent，只有启动它的 agent 或用户可以关闭它。" "$1 is not a sub-agent you started; only the agent that started it, or the user, can close it.")"
+  [ "$parent" = "$SELF_PANE" ] || die "$1 is not a sub-agent you started; only the agent that started it, or the user, can close it."
   if [ "$status" = working ] && [ "$force" = 0 ]; then
-    die "$(t "$1 还在工作。等它停下再 dismiss，或确认要中止时加 --force。" "$1 is still working. Wait for it to stop before dismissing, or add --force if you mean to abort it.")"
+    die "$1 is still working. Wait for it to stop before dismissing, or add --force if you mean to abort it."
   fi
-  herdr_call pane close "$pane" || die "$(t "关闭 $1 失败：${HERR_MSG}" "Failed to close $1: ${HERR_MSG}")"
-  printf "$(t '已关闭子 agent %s（pane %s）。\n' 'Closed sub-agent %s (pane %s).\n')" "$1" "$pane"
+  herdr_call pane close "$pane" || die "Failed to close $1: ${HERR_MSG}"
+  printf 'Closed sub-agent %s (pane %s).\n' "$1" "$pane"
 }
 
-# 已适配的 CLI，每行：命令|herdr 集成 id|全局 skill 目录|全局指令文件
+# Supported CLIs, one per line: command|herdr integration id|global skill directory|global instruction file
 known_clis() {
   printf '%s\n' \
     "claude|claude|$HOME/.claude/skills|$HOME/.claude/CLAUDE.md" \
@@ -531,24 +443,17 @@ known_clis() {
     "grok|grok|$HOME/.grok/skills|$HOME/.grok/AGENTS.md"
 }
 
-# 名片指针：写进各 CLI 全局指令文件的那一节。两种语言都必须含字面量 patmat card，install 和 doctor 靠它判断。
+# Card pointer: the section written into each CLI's global instruction file. It must contain the literal
+# patmat card; install and doctor rely on it.
 pointer_text() {
-  if [ "$PM_LANG" = en ]; then
-    cat <<'EOF'
+  cat <<'EOF'
 ## pat&mat
 
-When working inside herdr (environment variable HERDR_ENV=1), on receiving a task first run `patmat card --short "<a short name of one or two words, 12 characters at most, that lets the user recognize this session at a glance>" --role "<what you own>" --doing "<what you are doing>"` to post your card, and update --doing when you switch tasks. To collaborate with other agents, or when you receive a message starting with [pat&mat, use the pat-mat skill; if that skill is not available, run `patmat help`.
+When working inside herdr (environment variable HERDR_ENV=1), on receiving a task first run `patmat card --short "<a short name that lets the user recognize this session at a glance, at most 12 columns wide: about 6 CJK characters or 12 Latin letters>" --role "<what you own>" --doing "<what you are doing>"` to post your card, and update --doing when you switch tasks. Write the short name, role, and doing in the user's language, putting the key point first: the sidebar shows only the first ~20 columns of role and doing. To collaborate with other agents, or when you receive a message starting with [pat&mat, use the pat-mat skill; if that skill is not available, run `patmat help`.
 EOF
-  else
-    cat <<'EOF'
-## pat&mat
-
-在 herdr 里工作时（环境变量 HERDR_ENV=1），接到任务先运行 `patmat card --short "<两到六个字的短名，让用户一眼认出这个会话>" --role "<你负责什么>" --doing "<正在做什么>"` 挂出名片，换任务时更新 --doing。要与其他 agent 协作，或收到以 [pat&mat 开头的消息时，使用 pat-mat skill；没有该 skill 时运行 `patmat help`。
-EOF
-  fi
 }
 
-# 本脚本的真实路径（穿过软链）。
+# Real path of this script (through symlinks).
 script_path() {
   local src=$0 dir
   while [ -L "$src" ]; do
@@ -559,38 +464,38 @@ script_path() {
   printf '%s/%s' "$(cd "$(dirname "$src")" && pwd -P)" "$(basename "$src")"
 }
 
-# ensure_link <指向> <链接路径>：已正确就跳过；路径被别的东西占着就不动它。
+# ensure_link <target> <link path>: skip if already correct; leave the path alone if something else occupies it.
 ensure_link() {
   local target=$1 path=$2 cur
   if [ -L "$path" ]; then
     cur=$(readlink "$path")
     if [ "$cur" = "$target" ]; then
-      printf "$(t '  已就绪  %s\n' '  ready      %s\n')" "$path"
+      printf '  ready      %s\n' "$path"
     else
-      printf "$(t '  跳过    %s 已指向 %s，未改动\n' '  skipped    %s already points to %s; left unchanged\n')" "$path" "$cur"
+      printf '  skipped    %s already points to %s; left unchanged\n' "$path" "$cur"
     fi
   elif [ -e "$path" ]; then
-    printf "$(t '  跳过    %s 已存在且不是软链，未改动\n' '  skipped    %s exists and is not a symlink; left unchanged\n')" "$path"
+    printf '  skipped    %s exists and is not a symlink; left unchanged\n' "$path"
   else
     mkdir -p "$(dirname "$path")"
     ln -s "$target" "$path"
-    printf "$(t '  已链接  %s -> %s\n' '  linked     %s -> %s\n')" "$path" "$target"
+    printf '  linked     %s -> %s\n' "$path" "$target"
   fi
 }
 
 cmd_install() {
-  command -v herdr >/dev/null 2>&1 || die "$(t "找不到 herdr，请先安装：https://herdr.dev" "herdr not found; install it first: https://herdr.dev")"
-  command -v jq >/dev/null 2>&1 || die "$(t "找不到 jq，请先安装（brew install jq）" "jq not found; install it first (brew install jq)")"
+  command -v herdr >/dev/null 2>&1 || die "herdr not found; install it first: https://herdr.dev"
+  command -v jq >/dev/null 2>&1 || die "jq not found; install it first (brew install jq)"
   local self root
   self=$(script_path)
   root=$(dirname "$(dirname "$self")")
-  [ -f "$root/SKILL.md" ] || die "$(t "在 $root 下找不到 SKILL.md，请从完整的 pat-mat 仓库里运行。" "SKILL.md not found under ${root}; run this from a complete pat-mat repository.")"
+  [ -f "$root/SKILL.md" ] || die "SKILL.md not found under ${root}; run this from a complete pat-mat repository."
 
-  printf "$(t 'patmat 命令：\n' 'patmat command:\n')"
+  printf 'patmat command:\n'
   ensure_link "$self" "$HOME/.local/bin/patmat"
   case ":$PATH:" in
     *":$HOME/.local/bin:"*) ;;
-    *) printf "$(t '  注意    ~/.local/bin 不在 PATH 上，请把它加进你的 shell 配置\n' '  note       ~/.local/bin is not on PATH; add it in your shell config\n')" ;;
+    *) printf '  note       ~/.local/bin is not on PATH; add it in your shell config\n' ;;
   esac
 
   local status bin id skills file line found=0
@@ -598,40 +503,40 @@ cmd_install() {
   while IFS='|' read -r bin id skills file; do
     command -v "$bin" >/dev/null 2>&1 || continue
     found=1
-    printf "$(t '%s：\n' '%s:\n')" "$bin"
+    printf '%s:\n' "$bin"
     ensure_link "$root" "$skills/pat-mat"
     if [ -f "$file" ] && grep -q 'patmat card' "$file"; then
-      printf "$(t '  已就绪  %s 里有名片指针\n' '  ready      %s has the card pointer\n')" "$file"
+      printf '  ready      %s has the card pointer\n' "$file"
     else
       mkdir -p "$(dirname "$file")"
       {
         if [ -s "$file" ]; then printf '\n'; fi
         pointer_text
       } >>"$file"
-      printf "$(t '  已写入  名片指针 -> %s\n' '  wrote      card pointer -> %s\n')" "$file"
+      printf '  wrote      card pointer -> %s\n' "$file"
     fi
     line=$(printf '%s\n' "$status" | grep "^$id[ :(]" | head -1 || true)
     case "$line" in
-      *": current"*) printf "$(t '  已就绪  herdr 集成 %s\n' '  ready      herdr integration %s\n')" "$id" ;;
+      *": current"*) printf '  ready      herdr integration %s\n' "$id" ;;
       *)
         if herdr integration install "$id" </dev/null >/dev/null 2>&1; then
-          printf "$(t '  已安装  herdr 集成 %s\n' '  installed  herdr integration %s\n')" "$id"
+          printf '  installed  herdr integration %s\n' "$id"
         else
-          printf "$(t '  未完成  herdr 集成 %s，请手动运行 herdr integration install %s\n' '  todo       herdr integration %s; run herdr integration install %s by hand\n')" "$id" "$id"
+          printf '  todo       herdr integration %s; run herdr integration install %s by hand\n' "$id" "$id"
         fi
         ;;
     esac
   done <<EOF
 $(known_clis)
 EOF
-  [ "$found" = 1 ] || printf "$(t '没有发现已适配的 CLI（claude、codex、grok）。装好其中一家后重跑 patmat install。\n' 'No supported CLI found (claude, codex, grok). Install one of them, then rerun patmat install.\n')"
+  [ "$found" = 1 ] || printf 'No supported CLI found (claude, codex, grok). Install one of them, then rerun patmat install.\n'
 
-  printf "$(t 'herdr 侧边栏：\n' 'herdr sidebar:\n')"
+  printf 'herdr sidebar:\n'
   local cfg=${HERDR_CONFIG_PATH:-$HOME/.config/herdr/config.toml}
   if [ -f "$cfg" ] && grep -q '\$short' "$cfg" && grep -q '\$role' "$cfg" && grep -q '\$doing' "$cfg"; then
-    printf "$(t '  已就绪  %s\n' '  ready      %s\n')" "$cfg"
+    printf '  ready      %s\n' "$cfg"
   elif [ -f "$cfg" ] && grep -q '^\[ui\.sidebar\.agents\]' "$cfg"; then
-    printf "$(t '  未完成  %s 里已有自定义的 [ui.sidebar.agents]，请手动把 %s 加进 rows\n' '  todo       %s already has a custom [ui.sidebar.agents]; add %s to its rows by hand\n')" "$cfg" "$(t "\$short、\$role、\$doing" "\$short, \$role, \$doing")"
+    printf '  todo       %s already has a custom [ui.sidebar.agents]; add %s to its rows by hand\n' "$cfg" "\$short, \$role, \$doing"
   else
     mkdir -p "$(dirname "$cfg")"
     {
@@ -645,57 +550,57 @@ rows = [
 ]
 EOF
     } >>"$cfg"
-    printf "$(t '  已写入  名片行 -> %s\n' '  wrote      card rows -> %s\n')" "$cfg"
-    herdr server reload-config >/dev/null 2>&1 || printf "$(t '  注意    herdr 没在运行，侧边栏配置下次启动时生效\n' '  note       herdr is not running; the sidebar config takes effect on its next start\n')"
+    printf '  wrote      card rows -> %s\n' "$cfg"
+    herdr server reload-config >/dev/null 2>&1 || printf '  note       herdr is not running; the sidebar config takes effect on its next start\n'
   fi
 
-  printf "$(t '\n装好了。在 herdr 里启动或重启 agent，它会自动挂出名片；随时可在 agent 里运行 patmat doctor 体检。\n' '\nDone. Start or restart an agent inside herdr and it will post its card on its own; run patmat doctor inside an agent at any time for a checkup.\n')"
-  printf "$(t 'Codex 若使用 workspace-write 沙箱，还需放行 herdr socket，见 %s/SETUP.md。\n' 'If Codex uses the workspace-write sandbox, it also needs access to the herdr socket; see %s/SETUP.md.\n')" "$root"
+  printf '\nDone. Start or restart an agent inside herdr and it will post its card on its own; run patmat doctor inside an agent at any time for a checkup.\n'
+  printf 'If Codex uses the workspace-write sandbox, it also needs access to the herdr socket; see %s/SETUP.md.\n' "$root"
 }
 
 cmd_doctor() {
   local bad=0
   ok() { printf '  ok  %s\n' "$*"; }
   miss() {
-    printf "$(t '  缺  %s\n' '  !!  %s\n')" "$*"
+    printf '  !!  %s\n' "$*"
     bad=1
   }
   note() { printf '  --  %s\n' "$*"; }
 
-  if command -v herdr >/dev/null 2>&1; then ok "herdr$(t "：" ": ")$(herdr --version 2>/dev/null)"; else miss "$(t "herdr 未安装（https://herdr.dev）" "herdr is not installed (https://herdr.dev)")"; fi
-  if command -v jq >/dev/null 2>&1; then ok "jq"; else miss "$(t "jq 未安装" "jq is not installed")"; fi
+  if command -v herdr >/dev/null 2>&1; then ok "herdr: $(herdr --version 2>/dev/null)"; else miss "herdr is not installed (https://herdr.dev)"; fi
+  if command -v jq >/dev/null 2>&1; then ok "jq"; else miss "jq is not installed"; fi
 
   local self onpath
   self=$(script_path)
   onpath=$(command -v patmat 2>/dev/null || true)
-  if [ -n "$onpath" ]; then ok "$(t "patmat 在 PATH 上：${onpath}" "patmat is on PATH: ${onpath}")"; else miss "$(t "patmat 不在 PATH 上：运行 \"$self\" install" "patmat is not on PATH: run \"$self\" install")"; fi
+  if [ -n "$onpath" ]; then ok "patmat is on PATH: ${onpath}"; else miss "patmat is not on PATH: run \"$self\" install"; fi
 
   if [ "${HERDR_ENV:-}" = 1 ]; then
-    ok "$(t "运行在 herdr 内" "running inside herdr")"
+    ok "running inside herdr"
     if command -v herdr >/dev/null 2>&1 && command -v jq >/dev/null 2>&1; then
       if herdr_call agent list; then
-        ok "$(t "herdr socket 可达，在线 agent $(jq '.result.agents | length' <<<"$HOUT") 个" "herdr socket reachable, $(jq '.result.agents | length' <<<"$HOUT") agents online")"
+        ok "herdr socket reachable, $(jq '.result.agents | length' <<<"$HOUT") agents online"
         load_self soft
         if [ -z "$SELF_PANE" ]; then
-          miss "$(t "认不出本 Codex 会话在哪个 pane（多个 Codex 会话同时在工作），过几秒重跑" "cannot tell which pane this Codex session is in (several Codex sessions are working at once); rerun in a few seconds")"
+          miss "cannot tell which pane this Codex session is in (several Codex sessions are working at once); rerun in a few seconds"
         elif [ "$SELF_PANE" != "${HERDR_PANE_ID:-}" ]; then
-          ok "$(t "本会话是 ${SELF_ADDR}，在 pane ${SELF_PANE}（按 Codex 线程 id 认出；继承来的 HERDR_PANE_ID=${HERDR_PANE_ID:-} 属于另一个 Codex 会话）" "this session is ${SELF_ADDR}, in pane ${SELF_PANE} (identified by Codex thread id; the inherited HERDR_PANE_ID=${HERDR_PANE_ID:-} belongs to another Codex session)")"
+          ok "this session is ${SELF_ADDR}, in pane ${SELF_PANE} (identified by Codex thread id; the inherited HERDR_PANE_ID=${HERDR_PANE_ID:-} belongs to another Codex session)"
         else
-          ok "$(t "本会话是 ${SELF_ADDR}，在 pane $SELF_PANE" "this session is ${SELF_ADDR}, in pane $SELF_PANE")"
+          ok "this session is ${SELF_ADDR}, in pane $SELF_PANE"
         fi
       else
-        miss "$(t "herdr socket 不可达：${HERR_MSG}。若出现 Operation not permitted，说明本 CLI 的沙箱拦住了 socket，见 SETUP.md 的沙箱一节" "herdr socket unreachable: ${HERR_MSG}. Operation not permitted means this CLI's sandbox is blocking the socket; see the sandbox section of SETUP.md")"
+        miss "herdr socket unreachable: ${HERR_MSG}. Operation not permitted means this CLI's sandbox is blocking the socket; see the sandbox section of SETUP.md"
       fi
     fi
   else
-    miss "$(t "当前不在 herdr pane 内：先运行 herdr，再在里面启动 agent" "not inside a herdr pane: run herdr first, then start the agent inside it")"
+    miss "not inside a herdr pane: run herdr first, then start the agent inside it"
   fi
 
   local cfg=${HERDR_CONFIG_PATH:-$HOME/.config/herdr/config.toml}
   if [ -f "$cfg" ] && grep -q '\$short' "$cfg" && grep -q '\$role' "$cfg" && grep -q '\$doing' "$cfg"; then
-    ok "$(t "侧边栏已配置显示 \$short / \$role / \$doing（${cfg}）" "sidebar is configured to show \$short / \$role / \$doing (${cfg})")"
+    ok "sidebar is configured to show \$short / \$role / \$doing (${cfg})"
   else
-    miss "$(t "侧边栏还没显示名片：在 $cfg 的 [ui.sidebar.agents] rows 里加入 \$short、\$role、\$doing" "sidebar does not show cards yet: add \$short, \$role, \$doing to the [ui.sidebar.agents] rows in $cfg")"
+    miss "sidebar does not show cards yet: add \$short, \$role, \$doing to the [ui.sidebar.agents] rows in $cfg"
   fi
 
   if command -v herdr >/dev/null 2>&1; then
@@ -707,49 +612,31 @@ cmd_doctor() {
       [ "$bin" = agy ] && id=antigravity-cli
       line=$(printf '%s\n' "$status" | grep "^$id[ :(]" | head -1 || true)
       case "$line" in
-        *": current"*) ok "$(t "herdr 集成 $id" "herdr integration $id")" ;;
-        *) miss "$(t "herdr 集成 $id 未就绪：herdr integration install $id" "herdr integration $id is not ready: herdr integration install $id")" ;;
+        *": current"*) ok "herdr integration $id" ;;
+        *) miss "herdr integration $id is not ready: herdr integration install $id" ;;
       esac
     done
   fi
 
-  # 每家已适配的 CLI：skill 可读，全局指令里有名片指针。
+  # Each supported CLI: the skill is readable and the global instructions have the card pointer.
   local bin id skills file
   while IFS='|' read -r bin id skills file; do
     command -v "$bin" >/dev/null 2>&1 || continue
-    if [ -r "$skills/pat-mat/SKILL.md" ]; then ok "$(t "$bin 能读到 skill（$skills/pat-mat）" "$bin can read the skill ($skills/pat-mat)")"; else miss "$(t "$bin 读不到 skill：运行 patmat install" "$bin cannot read the skill: run patmat install")"; fi
-    if [ -f "$file" ] && grep -q 'patmat card' "$file"; then ok "$(t "$bin 的全局指令里有名片指针（${file}）" "$bin's global instructions have the card pointer (${file})")"; else miss "$(t "$bin 的全局指令缺名片指针：运行 patmat install" "$bin's global instructions lack the card pointer: run patmat install")"; fi
+    if [ -r "$skills/pat-mat/SKILL.md" ]; then ok "$bin can read the skill ($skills/pat-mat)"; else miss "$bin cannot read the skill: run patmat install"; fi
+    if [ -f "$file" ] && grep -q 'patmat card' "$file"; then ok "$bin's global instructions have the card pointer (${file})"; else miss "$bin's global instructions lack the card pointer: run patmat install"; fi
   done <<EOF
 $(known_clis)
 EOF
   for bin in kimi agy; do
-    command -v "$bin" >/dev/null 2>&1 && note "$(t "${bin}：skill 目录和全局指令文件的位置请对照其文档，确认两处都已就位" "${bin}: check its docs for where its skill directory and global instruction file live, and confirm both are in place")"
+    command -v "$bin" >/dev/null 2>&1 && note "${bin}: check its docs for where its skill directory and global instruction file live, and confirm both are in place"
   done
 
   if [ "$bad" = 0 ]; then
-    printf "$(t '全部就绪。\n' 'All set.\n')"
+    printf 'All set.\n'
   else
-    printf "$(t '还有缺项，按 SETUP.md 逐项补齐后重跑 patmat doctor。\n' 'Some items are missing; fix each one following SETUP.md, then rerun patmat doctor.\n')"
+    printf 'Some items are missing; fix each one following SETUP.md, then rerun patmat doctor.\n'
     return 1
   fi
-}
-
-cmd_lang() {
-  if [ $# -eq 0 ]; then
-    printf '%s\n' "$PM_LANG"
-    return
-  fi
-  case "$1" in
-    zh | en) ;;
-    *) die "$(t "语言只能是 zh 或 en：$1" "The language must be zh or en: $1")" ;;
-  esac
-  mkdir -p "$(dirname "$LANG_FILE")"
-  printf '%s\n' "$1" >"$LANG_FILE"
-  PM_LANG=$1
-  printf "$(t '输出语言已设为 zh（保存在 %s）。\n' 'Output language set to en (saved in %s).\n')" "$(tilde "$LANG_FILE")"
-  case "${PATMAT_LANG:-}" in
-    zh | en) [ "$PATMAT_LANG" = "$1" ] || printf "$(t '注意：环境变量 PATMAT_LANG=%s 优先于此设置。\n' 'Note: the environment variable PATMAT_LANG=%s takes precedence over this setting.\n')" "$PATMAT_LANG" ;;
-  esac
 }
 
 main() {
@@ -766,9 +653,8 @@ main() {
     install) cmd_install "$@" ;;
     pointer) pointer_text ;;
     doctor) cmd_doctor "$@" ;;
-    lang) cmd_lang "$@" ;;
     help | -h | --help) usage ;;
-    *) die "$(t "不认识的子命令 ${cmd}。运行 patmat help 查看用法。" "Unknown subcommand ${cmd}. Run patmat help for usage.")" ;;
+    *) die "Unknown subcommand ${cmd}. Run patmat help for usage." ;;
   esac
 }
 

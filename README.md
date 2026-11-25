@@ -11,7 +11,7 @@ pat&mat is a skill that helps coding agents across projects and CLI tools collab
 - Show each agent’s short label, role, and current work in the herdr sidebar.
 - Let you ask in plain language, without learning commands.
 
-The skill documentation is in English. `patmat` output is in English or Chinese: it follows a Chinese (`zh*`) locale and is English otherwise; switch with `patmat lang zh` or `patmat lang en`, or set `PATMAT_LANG` for one shell.
+The skill documentation and `patmat` output are in English; your agent relays them to you in your language, and writes cards and messages in your language.
 
 ## Install
 
@@ -33,7 +33,7 @@ Requires macOS, [herdr](https://github.com/herdrdev/herdr), `git`, `jq`, and at 
 2. In the other agent’s conversation, say: **“Ask the database agent whether it can clear the test tables.”**
 3. Watch the message arrive in the database agent’s pane; its reply returns to the asking conversation. The sidebar shows each agent’s short label and role. If an agent is waiting for confirmation, handle it in that pane.
 
-The short label is a two-to-six-character label for you, shown first in the sidebar; the agent name is the address agents use to contact one another.
+The short label is for you: at most 12 columns wide (about 6 CJK characters or 12 Latin letters), shown first in the sidebar; the agent name is the address agents use to contact one another.
 
 You can also say:
 
