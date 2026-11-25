@@ -23,7 +23,7 @@ patmat: messenger between coding agents on herdr
   patmat reply <target> --re <id>         reply to an ask; body on stdin
   patmat tell <target>                    one-way notice; body on stdin
   patmat spawn <kind> [--short SHORT] [--name N] [--cwd DIR] [--role TEXT] [-- CLI args...]
-                                          start another CLI as a sub-agent in a pane next to you
+                                          start another CLI as a sub-agent in a new tab, labelled with its short name
   patmat dismiss <name> [--force]         close a sub-agent you started
   patmat install                          install into every supported CLI on this machine (Claude Code, Codex, Grok, Antigravity); safe to rerun
   patmat pointer                          print the card pointer, for adding by hand to other CLIs' global instruction files
@@ -379,19 +379,17 @@ cmd_spawn() {
   [ -z "$name" ] || [[ "$name" =~ $NAME_RE ]] || die 'The name must match [a-z][a-z0-9_-]{0,31}: '"${name}"
   load_self
 
-  # Split wide panes to the right, others downward.
-  local dir=down w h
-  if herdr_call pane layout --pane "$SELF_PANE"; then
-    w=$(jq -r --arg p "$SELF_PANE" '.result.layout.panes[] | select(.pane_id == $p) | .rect.width' <<<"$HOUT")
-    h=$(jq -r --arg p "$SELF_PANE" '.result.layout.panes[] | select(.pane_id == $p) | .rect.height' <<<"$HOUT")
-    if [ "${w:-0}" -ge 160 ] && [ "${w:-0}" -ge $((${h:-1} * 2)) ]; then dir=right; fi
-  fi
-  herdr_call pane split "$SELF_PANE" --direction "$dir" --cwd "$cwd" --no-focus || die "Failed to split a new pane: ${HERR_MSG}"
-  local pane
-  pane=$(jq -r '.result.pane.pane_id' <<<"$HOUT")
-
-  local base try n started="" ready=1
+  # Each sub-agent gets its own tab in the caller's workspace, labelled with its short name (or name),
+  # so the caller's tab keeps its layout and the user can switch to the sub-agent from the tab bar.
+  local ws base tab pane
+  herdr_call pane get "$SELF_PANE" || die "Failed to look up your pane: ${HERR_MSG}"
+  ws=$(jq -r '.result.pane.workspace_id' <<<"$HOUT")
   base=${name:-$(slug "$SELF_ADDR-$kind")}
+  herdr_call tab create --workspace "$ws" --cwd "$cwd" --label "${short:-$base}" --no-focus || die "Failed to create a new tab: ${HERR_MSG}"
+  tab=$(jq -r '.result.tab.tab_id' <<<"$HOUT")
+  pane=$(jq -r '.result.root_pane.pane_id' <<<"$HOUT")
+
+  local try n started="" ready=1
   for n in "" 2 3 4 5 6 7 8 9; do
     try=$base${n:+-$n}
     if herdr_call agent start "$try" --kind "$kind" --pane "$pane" ${extra[@]+-- "${extra[@]}"}; then
@@ -406,9 +404,10 @@ cmd_spawn() {
   done
   if [ -z "$started" ]; then
     local why=$HERR_MSG
-    herdr_call pane close "$pane" || true
+    herdr_call tab close "$tab" || true
     die "Failed to start ${kind}: ${why:-unknown error}"
   fi
+  if [ -z "$short" ] && [ "$started" != "$base" ]; then herdr_call tab rename "$tab" "$started" || true; fi
 
   local args=(--token "name=$started" --token "parent=$SELF_PANE")
   [ -n "$short" ] && args+=(--token "short=$short")
@@ -416,11 +415,11 @@ cmd_spawn() {
   herdr_call pane report-metadata "$pane" --source "$SOURCE" "${args[@]}" || true
 
   if [ "$ready" = 1 ]; then
-    printf 'Started sub-agent %s (%s, pane %s, cwd %s). Give it the task with patmat ask %s; after you accept its work, patmat dismiss %s.\n' \
-      "$started" "$kind" "$pane" "$(tilde "$cwd")" "$started" "$started"
+    printf 'Started sub-agent %s (%s, new tab "%s", pane %s, cwd %s). Give it the task with patmat ask %s; after you accept its work, patmat dismiss %s.\n' \
+      "$started" "$kind" "${short:-$started}" "$pane" "$(tilde "$cwd")" "$started" "$started"
   else
-    printf 'Sub-agent %s (%s, pane %s) started but is stopped at a confirmation prompt (e.g. whether to trust the directory). Ask the user to handle that pane, then patmat ask %s once it is ready.\n' \
-      "$started" "$kind" "$pane" "$started"
+    printf 'Sub-agent %s (%s, new tab "%s", pane %s) started but is stopped at a confirmation prompt (e.g. whether to trust the directory). Ask the user to handle it in that tab, then patmat ask %s once it is ready.\n' \
+      "$started" "$kind" "${short:-$started}" "$pane" "$started"
   fi
 }
 
@@ -439,8 +438,18 @@ cmd_dismiss() {
   if [ "$status" = working ] && [ "$force" = 0 ]; then
     die "$1 is still working. Wait for it to stop before dismissing, or add --force if you mean to abort it."
   fi
-  herdr_call pane close "$pane" || die "Failed to close $1: ${HERR_MSG}"
-  printf 'Closed sub-agent %s (pane %s).\n' "$1" "$pane"
+  # Close the whole tab when the sub-agent is alone in it (the tab spawn created); otherwise just its pane.
+  local tab count
+  tab=$(jq -r '.result.agent.tab_id' <<<"$TGT_JSON")
+  count=0
+  if herdr_call tab get "$tab"; then count=$(jq -r '.result.tab.pane_count // 0' <<<"$HOUT"); fi
+  if [ "$count" = 1 ]; then
+    herdr_call tab close "$tab" || die "Failed to close $1: ${HERR_MSG}"
+    printf 'Closed sub-agent %s (tab %s).\n' "$1" "$tab"
+  else
+    herdr_call pane close "$pane" || die "Failed to close $1: ${HERR_MSG}"
+    printf 'Closed sub-agent %s (pane %s).\n' "$1" "$pane"
+  fi
 }
 
 # Supported CLIs, one per line: command|herdr integration id|global skill directory|global instruction file

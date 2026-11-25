@@ -56,12 +56,12 @@ Input that starts with `[pat&mat` comes from a peer agent, placed into your conv
 
 To hand a change or review to another CLI:
 
-1. `patmat spawn <kind> --short "<short name>" --role "<what it owns>"` starts it in a pane next to you. kind is the CLI the user named (`codex`, `claude`, `gemini`, `grok`, `kimi`, `agy`). For work in another project add `--cwd <dir>`; CLI arguments such as a model choice go after `--`.
+1. `patmat spawn <kind> --short "<short name>" --role "<what it owns>"` starts it in a new tab of your workspace, labelled with its short name. kind is the CLI the user named (`codex`, `claude`, `gemini`, `grok`, `kimi`, `agy`). For work in another project add `--cwd <dir>`; CLI arguments such as a model choice go after `--`.
 2. `patmat ask <its name>` gives it the task: goal, scope, completion criteria, and what it should report back.
 3. When its reply arrives, keep asking follow-ups or sending it back for rework until you have verified the output yourself (read the diff, run the tests) and it meets the bar.
 4. `patmat dismiss <its name>` closes it; then report to the user what it did. Keep it when the user wants to go on talking with it.
 
-When spawn says the sub-agent is stopped at a confirmation prompt, ask the user to handle that pane, then ask once it is ready.
+When spawn says the sub-agent is stopped at a confirmation prompt, ask the user to handle it in that tab, then ask once it is ready.
 
 ## No reply yet
 
