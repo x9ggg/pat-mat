@@ -2,20 +2,20 @@
 
 English | [简体中文](README.zh-CN.md)
 
-pat&mat is a skill that helps coding agents across projects and CLI tools collaborate in the same [herdr](https://github.com/herdrdev/herdr), an open-source terminal workspace manager.
+pat&mat is a skill that lets coding agents collaborate across projects and CLI tools in [herdr](https://github.com/herdrdev/herdr), an open-source terminal workspace manager.
 
 ## What it does
 
-- Connect agents across projects; replies return to the asking agent’s conversation.
-- Start an agent from another CLI to work on a task or review changes.
-- Show each agent’s short label, role, and current work in the herdr sidebar.
-- Let you ask in plain language, without learning commands.
+- Connect agents so they can ask each other questions or hand off work, with replies returning to the original conversation.
+- Start another CLI agent to work on a task or review changes.
+- Show each agent’s short name, role, and current task in the herdr sidebar.
+- Let you coordinate agents in plain language, without learning commands.
 
-The skill documentation and `patmat` output are in English; your agent relays them to you in your language, and writes cards and messages in your language.
+The skill documentation and `patmat` output are in English. Your agent relays them in your language and writes card details and messages in your language.
 
 ## Install
 
-Requires macOS, [herdr](https://github.com/herdrdev/herdr), `git`, `jq`, and at least one supported coding agent CLI.
+Requires macOS, [herdr](https://github.com/herdrdev/herdr), `curl`, `git`, `jq`, and at least one supported coding agent CLI.
 
 1. Run the installer:
 
@@ -23,17 +23,17 @@ Requires macOS, [herdr](https://github.com/herdrdev/herdr), `git`, `jq`, and at 
    curl -fsSL https://raw.githubusercontent.com/x9ggg/pat-mat/main/install.sh | bash
    ```
 
-   It clones or updates `~/pat-mat`, then configures the installed Claude Code, Codex, and Grok CLIs: it links the command and skill, appends instructions when needed, installs herdr integrations, and configures the sidebar. You can run it again to update; it skips occupied link paths. Check its output for skipped or unfinished steps and PATH notices.
-2. Run `herdr`, then start or restart your CLI in a pane. When the agent receives a task, it will put up its card automatically.
-3. If you use another CLI, have a custom sidebar, or need to configure a sandbox, tell your agent **“Set up pat&mat.”** It will guide you through [SETUP.md](SETUP.md).
+   It clones or updates `~/pat-mat` and configures installed Claude Code, Codex, and Grok CLIs and the herdr sidebar. You can rerun it to update. Check the output for skipped steps and PATH notices.
+2. Run `herdr`, then start or restart your agent in a pane. It will post a card when it receives a task.
+3. If setup reports unfinished steps, or you use another CLI, a custom sidebar, or a sandbox, tell your agent **“Set up pat&mat.”** It can follow [SETUP.md](SETUP.md).
 
 ## First use
 
-1. In herdr, open a pane for each of two projects, including a database project. Start a configured agent in each project directory and give each one a task so it puts up its card.
-2. In the other agent’s conversation, say: **“Ask the database agent whether it can clear the test tables.”**
-3. Watch the message arrive in the database agent’s pane; its reply returns to the asking conversation. The sidebar shows each agent’s short label and role. If an agent is waiting for confirmation, handle it in that pane.
+1. In herdr, open two panes and start a configured agent in each project directory. Give each agent a task so it posts a card.
+2. In one agent’s conversation, say: **“Ask [the other agent’s short name] what project it is working on.”** Use the short name shown in the sidebar.
+3. Watch the message arrive in the other pane. Its reply returns to the first conversation. If an agent needs confirmation, respond in its pane.
 
-The short label is for you: at most 12 columns wide (about 6 CJK characters or 12 Latin letters), shown first in the sidebar; the agent name is the address agents use to contact one another.
+The sidebar shows each agent’s short name, role, and current task. The short name is a label for you, at most 12 columns wide (about 6 CJK characters or 12 Latin letters); the agent name is the address agents use to contact each other.
 
 You can also say:
 
